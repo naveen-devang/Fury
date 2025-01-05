@@ -4,10 +4,19 @@ const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
 
+// Add to the top of renderer.js
+const { parseSubtitles } = require('./subtitle-parser');
+const SubtitleTrackManager = require('./track-manager');
+const SubtitleControls = require('./subtitle-controls');
+
 let playlist = [];
 let currentIndex = -1;
 let isLooping = false;
 let isShuffling = false;
+
+let controlsTimeout;
+let isFullscreen = false;
+const INACTIVITY_TIMEOUT = 3000; // 3 seconds
 
 // DOM Elements
 const mediaPlayer = document.getElementById('media-player');
@@ -24,6 +33,9 @@ const loopBtn = document.getElementById('loop');
 const playbackSpeedSelect = document.getElementById('playback-speed');
 const playlistElement = document.getElementById('playlist');
 
+// Add these variables after the existing DOM element declarations in renderer.js
+const trackManager = new SubtitleTrackManager(mediaPlayer);
+const subtitleControls = new SubtitleControls(trackManager, document.querySelector('.advanced-options'));
 
 // Initialize player state
 let lastVolume = 1;
@@ -34,6 +46,24 @@ const savedPlaylist = store.get('playlist', []);
 if (savedPlaylist.length > 0) {
     playlist = savedPlaylist;
     updatePlaylistUI();
+}
+
+function showControls() {
+    const controlsOverlay = document.getElementById('controls-overlay');
+    controlsOverlay.style.opacity = '1';
+    
+    // Reset the timer whenever controls are shown
+    if (isFullscreen) {
+        clearTimeout(controlsTimeout);
+        controlsTimeout = setTimeout(hideControls, INACTIVITY_TIMEOUT);
+    }
+}
+
+function hideControls() {
+    if (isFullscreen) {
+        const controlsOverlay = document.getElementById('controls-overlay');
+        controlsOverlay.style.opacity = '0';
+    }
 }
 
 // Event Listeners
@@ -190,7 +220,7 @@ function playFile(filePath) {
     mediaPlayer.src = filePath;
     mediaPlayer.play()
         .then(() => {
-            playPauseBtn.textContent = '⏸';
+            updatePlayPauseIcon(false); // false means not paused
         })
         .catch(error => {
             console.error('Error playing file:', error);
@@ -200,20 +230,36 @@ function playFile(filePath) {
     updateWindowTitle();
 }
 
+function updatePlayPauseIcon(isPaused) {
+    playPauseBtn.innerHTML = isPaused 
+        ? `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
+}
+
 function togglePlayPause() {
     if (mediaPlayer.paused) {
         mediaPlayer.play()
             .then(() => {
-                playPauseBtn.textContent = '⏸';
+                updatePlayPauseIcon(false);
             })
             .catch(error => {
                 console.error('Error playing media:', error);
             });
     } else {
         mediaPlayer.pause();
-        playPauseBtn.textContent = '⏵';
+        updatePlayPauseIcon(true);
     }
 }
+
+// Add event listener for media player pause event
+mediaPlayer.addEventListener('pause', () => {
+    updatePlayPauseIcon(true);
+});
+
+// Add event listener for media player play event
+mediaPlayer.addEventListener('play', () => {
+    updatePlayPauseIcon(false);
+});
 
 function updateTimeDisplay() {
     if (!isNaN(mediaPlayer.duration)) {
@@ -233,7 +279,13 @@ function updateVolume() {
     const volume = volumeSlider.value / 100;
     mediaPlayer.volume = volume;
     lastVolume = volume;
-    muteBtn.textContent = volume === 0 ? '🔇' : '🔊';
+    
+    // Update volume icon based on level
+    if (volume === 0) {
+        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+    } else {
+        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+    }
 }
 
 function toggleMute() {
@@ -241,11 +293,11 @@ function toggleMute() {
         lastVolume = mediaPlayer.volume;
         mediaPlayer.volume = 0;
         volumeSlider.value = 0;
-        muteBtn.textContent = '🔇';
+        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
     } else {
         mediaPlayer.volume = lastVolume;
         volumeSlider.value = lastVolume * 100;
-        muteBtn.textContent = '🔊';
+        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
     }
 }
 
@@ -253,11 +305,50 @@ function toggleFullscreen() {
     if (!document.fullscreenElement) {
         document.getElementById('player-container').requestFullscreen();
         ipcRenderer.send('toggle-menu-bar', false);
+        isFullscreen = true;
+        
+        // Initial timer when entering fullscreen
+        showControls();
+        
     } else {
         document.exitFullscreen();
         ipcRenderer.send('toggle-menu-bar', true);
+        isFullscreen = false;
+        
+        // Clear timer and show controls when exiting fullscreen
+        clearTimeout(controlsTimeout);
+        showControls();
     }
 }
+
+document.addEventListener('mousemove', () => {
+    if (isFullscreen) {
+        showControls();
+    }
+});
+
+// Prevent controls from hiding while interacting with them
+document.getElementById('controls-overlay').addEventListener('mouseenter', () => {
+    if (isFullscreen) {
+        clearTimeout(controlsTimeout);
+        showControls();
+    }
+});
+
+document.getElementById('controls-overlay').addEventListener('mouseleave', () => {
+    if (isFullscreen) {
+        controlsTimeout = setTimeout(hideControls, INACTIVITY_TIMEOUT);
+    }
+});
+
+document.addEventListener('fullscreenchange', () => {
+    isFullscreen = !!document.fullscreenElement;
+    
+    if (!isFullscreen) {
+        clearTimeout(controlsTimeout);
+        showControls();
+    }
+});
 
 function playNext() {
     if (playlist.length === 0) return;
@@ -332,6 +423,50 @@ function formatTime(seconds) {
 }
 
 // IPC Events
+
+ipcRenderer.on('menu-load-subtitles', async (_, filePaths) => {
+    try {
+        const subtitlePath = filePaths[0];
+        const vttPath = await parseSubtitles(subtitlePath);
+        
+        // Get the subtitle language from file name or default to 'en'
+        const fileName = path.basename(subtitlePath, path.extname(subtitlePath));
+        const languageMatch = fileName.match(/\b[a-z]{2,3}\b/i);
+        const language = languageMatch ? languageMatch[0].toLowerCase() : 'en';
+        
+        // Add the subtitle track
+        trackManager.addTrack(vttPath, language, `Subtitles (${language.toUpperCase()})`);
+    } catch (error) {
+        console.error('Error loading subtitles:', error);
+        dialog.showErrorBox('Subtitle Error', `Failed to load subtitles: ${error.message}`);
+    }
+});
+
+// Add this event listener in renderer.js
+ipcRenderer.on('menu-toggle-subtitles', () => {
+    const tracks = trackManager.getTracksList();
+    const currentTrack = tracks.find(track => track.isActive);
+    
+    if (currentTrack) {
+        // If there's an active track, disable it
+        trackManager.setCurrentTrack(null);
+    } else {
+        // If no track is active, enable the first available track
+        const firstTrack = tracks[0];
+        if (firstTrack) {
+            trackManager.setCurrentTrack(firstTrack.path);
+        }
+    }
+});
+
+// Add error handling for subtitle tracks in renderer.js
+mediaPlayer.addEventListener('error', (e) => {
+    if (e.target.tagName === 'TRACK') {
+        console.error('Subtitle track error:', e);
+        dialog.showErrorBox('Subtitle Error', 'Failed to load subtitle track');
+    }
+});
+
 ipcRenderer.on('menu-open-files', openFiles);
 ipcRenderer.on('menu-clear-playlist', clearPlaylist);
 ipcRenderer.on('menu-play-pause', togglePlayPause);

@@ -67,10 +67,14 @@ const createMenuTemplate = (mainWindow) => [
                 }
             },
             {
-                label: 'Toggle Subtitles',
+                label: 'Show Subtitles',
                 accelerator: 'CmdOrCtrl+Shift+V',
-                click: () => mainWindow.webContents.send('menu-toggle-subtitles')
-            }
+                type: 'checkbox',
+                checked: false,
+                click: (menuItem) => {
+                    mainWindow.webContents.send('menu-toggle-subtitles', menuItem.checked);
+                }
+            },
         ]
     },
     {

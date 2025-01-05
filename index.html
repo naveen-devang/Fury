@@ -52,11 +52,19 @@
             padding: 20px;
             opacity: 1;
             transition: opacity 0.3s;
+            z-index: 1000;
         }
 
+        /* Remove the existing hover rule since we're handling it with JavaScript now */
         #player-container:not(:hover) #controls-overlay {
-            opacity: 0;
+            opacity: 1;
         }
+
+        /* Hide cursor when controls are hidden in fullscreen */
+        #player-container:-webkit-full-screen.controls-hidden {
+            cursor: none;
+        }
+
 
         /* Time Control Row */
         .time-control-row {
@@ -73,6 +81,14 @@
             height: 5px;
             background: var(--slider-bg);
             border-radius: 2.5px;
+        }
+
+        #time-display {
+            min-width: 100px;
+            text-align: right;
+            font-size: 14px;
+            color: var(--text-color);
+            white-space: nowrap;
         }
 
         #time-slider::-webkit-slider-thumb {
@@ -95,7 +111,7 @@
             display: flex;
             align-items: center;
             gap: 15px;
-            padding: 10px 20px;
+            padding: 10px 0;
         }
 
         .playback-controls {
@@ -118,7 +134,7 @@
             cursor: pointer;
             padding: 8px;
             border-radius: 50%;
-            transition: background-color 0.2s;
+            transition: background-color 0.2s, color 0.2s;
             width: 36px;
             height: 36px;
             display: flex;
@@ -128,6 +144,16 @@
 
         .control-button:hover {
             background-color: rgba(255, 255, 255, 0.1);
+            color: var(--primary-color);
+        }
+        
+        .control-button svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .control-button.active {
+            color: var(--primary-color);
         }
 
         /* Volume Control */
@@ -138,11 +164,12 @@
             width: 120px;
         }
 
-        #volume-slider, #time-slider {
+        #volume-slider {
             -webkit-appearance: none;
             height: 4px;
             border-radius: 2px;
             background: var(--slider-bg);
+            flex: 1;
         }
 
         #volume-slider::-webkit-slider-thumb, #time-slider::-webkit-slider-thumb {
@@ -315,26 +342,40 @@
                     </div>
                     <div class="controls-container">
                         <div class="playback-controls">
-                            <button class="control-button" id="previous" title="Previous">⏮</button>
-                            <button class="control-button" id="play-pause" title="Play/Pause">▶</button>
-                            <button class="control-button" id="next" title="Next">⏭</button>
+                            <button class="control-button" id="previous" title="Previous">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+                            </button>
+                            <button class="control-button" id="play-pause" title="Play/Pause">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            </button>
+                            <button class="control-button" id="next" title="Next">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+                            </button>
                             
                             <div class="volume-control">
-                                <button class="control-button" id="mute" title="Mute">🔊</button>
+                                <button class="control-button" id="mute" title="Mute">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                                </button>
                                 <input type="range" id="volume-slider" min="0" max="100" value="100">
                             </div>
                         </div>
                         
                         <div class="advanced-options">
-                            <button class="control-button" id="shuffle" title="Shuffle">🔀</button>
-                            <button class="control-button" id="loop" title="Loop">🔁</button>
+                            <button class="control-button" id="shuffle" title="Shuffle">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+                            </button>
+                            <button class="control-button" id="loop" title="Loop">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"></path><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"></path><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2"></path></svg>
+                            </button>
                             <select id="playback-speed" title="Playback Speed">
                                 <option value="0.5">0.5x</option>
                                 <option value="1.0" selected>1.0x</option>
                                 <option value="1.5">1.5x</option>
                                 <option value="2.0">2.0x</option>
                             </select>
-                            <button class="control-button" id="fullscreen" title="Fullscreen">⛶</button>
+                            <button class="control-button" id="fullscreen" title="Fullscreen">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
+                            </button>
                         </div>
                     </div>
                 </div>
