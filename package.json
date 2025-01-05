@@ -1,0 +1,58 @@
+{
+  "name": "fury",
+  "version": "0.0.1",
+  "description": "media player using Electron",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "publish": "electron-builder -p always"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/naveen-devang/Fury.git"
+  },
+  "dependencies": {
+    "ass-parser": "^0.2.0",
+    "electron-log": "^5.0.1",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.1.7",
+    "music-metadata": "^7.14.0",
+    "srt-parser-2": "^1.2.3",
+    "subtitle": "^4.2.1",
+    "subtitles": "^0.0.5"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.fury.mediaplayer",
+    "productName": "Fury",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.icns"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png"
+    },
+    "publish": {
+      "provider": "github",
+      "private": false
+    }
+  }
+}

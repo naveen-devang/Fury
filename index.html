@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fury</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #player-container {
+            width: 100%;
+            height: calc(100vh - 200px);
+            background-color: #000;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #media-player {
+            width: 100%;
+            height: 100%;
+            outline: none;
+        }
+        .fullscreen #player-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1000;
+        }
+        #controls {
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+        #time-slider {
+            flex-grow: 1;
+        }
+        #playlist-container {
+            margin-top: 20px;
+        }
+        #playlist {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .playlist-item-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            cursor: pointer;
+        }
+        .playlist-item {
+            padding: 8px;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .playlist-item-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .remove-button {
+            background: none;
+            border: none;
+            color: #666;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 24px;
+            border-radius: 4px;
+        }
+        
+        .remove-button:hover {
+            background-color: #ff4444;
+            color: white;
+        }
+        .playlist-item:hover {
+            background-color: #333;
+        }
+        .playlist-item.active {
+            background-color: #4CAF50;
+        }
+        .duration {
+            color: #888;
+            font-size: 0.9em;
+        }
+        .advanced-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-top: 10px;
+        }
+        #time-display {
+            min-width: 100px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="player-container">
+        <video id="media-player"></video>
+    </div>
+    <div id="controls">
+        <button id="play-pause">Play</button>
+        <button id="previous">Previous</button>
+        <button id="next">Next</button>
+        <span id="time-display">00:00 / 00:00</span>
+        <input type="range" id="time-slider" min="0" max="100" value="0">
+        <button id="mute">Mute</button>
+        <input type="range" id="volume-slider" min="0" max="100" value="100">
+        <button id="fullscreen">Fullscreen</button>
+        <button id="open-file">Open Files</button>
+        
+        <div class="advanced-controls">
+            <button id="load-subtitle">Load Subtitles</button>
+            <select id="playback-speed">
+                <option value="0.5">0.5x</option>
+                <option value="1.0" selected>1.0x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2.0">2.0x</option>
+            </select>
+            <button id="toggle-loop">Loop: Off</button>
+            <button id="toggle-shuffle">Shuffle: Off</button>
+        </div>
+    </div>
+    <div id="playlist-container">
+        <div id="playlist"></div>
+    </div>
+    <script src="renderer.js"></script>
+</body>
+</html>
