@@ -27,6 +27,19 @@ module.exports = {
       config: {},
     },
   ],
+  publishers: [
+    {
+      name: '@electron-forge/publisher-github',
+      config: {
+        repository: {
+          owner: 'naveen-devang',
+          name: 'Fury',
+        },
+        prerelease: false, // Set to true if publishing a prerelease
+        draft: true,       // Set to false to auto-publish the release
+      },
+    },
+  ],
   plugins: [
     {
       name: '@electron-forge/plugin-auto-unpack-natives',
