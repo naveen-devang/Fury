@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
+const createMenuTemplate = require('./menu-template');
 const store = new Store();
 
 // Configure logging
@@ -22,9 +23,12 @@ function createWindow() {
       autoHideMenuBar: false,
       frame: true
   });
+  
+  // Set the application menu
+  const menu = Menu.buildFromTemplate(createMenuTemplate(mainWindow));
+  Menu.setApplicationMenu(menu);
+  
   mainWindow.loadFile('index.html');
-
-  // Check for updates after window is created
   autoUpdater.checkForUpdatesAndNotify();
 }
 
@@ -86,24 +90,14 @@ autoUpdater.on('error', (err) => {
 });
 
 ipcMain.handle('open-files', async () => {
- const result = await dialog.showOpenDialog(mainWindow, {
-  properties: ['openFile', 'multiSelections'],
-  filters: [
-    { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mp3', 'wav', 'webm'] }
-  ]
- });
- return result.filePaths;
-});
-
-ipcMain.handle('open-subtitles', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-   properties: ['openFile'],
-   filters: [
-     { name: 'Subtitle Files', extensions: ['vtt', 'srt', 'ass', 'ssa'] }
-   ]
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+          { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mp3', 'wav', 'webm'] }
+      ]
   });
   return result.filePaths;
- });
+});
 
  ipcMain.handle('check-for-updates', () => {
   autoUpdater.checkForUpdatesAndNotify();
