@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron-forge start",
     "build": "electron-builder",
-    "publish": "electron-builder -p always",
+    "publish": "electron-forge publish",
     "package": "electron-forge package",
     "make": "electron-forge make"
   },
