@@ -4,9 +4,11 @@
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "electron-forge start",
     "build": "electron-builder",
-    "publish": "electron-builder -p always"
+    "publish": "electron-builder -p always",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
   "repository": {
     "type": "git",
@@ -15,6 +17,7 @@
   "dependencies": {
     "ass-parser": "^0.2.0",
     "electron-log": "^5.0.1",
+    "electron-squirrel-startup": "^1.0.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.1.7",
     "music-metadata": "^7.14.0",
@@ -23,8 +26,15 @@
     "subtitles": "^0.0.5"
   },
   "devDependencies": {
-    "electron": "^28.3.3",
-    "electron-builder": "^24.9.1"
+    "@electron-forge/cli": "^7.6.0",
+    "@electron-forge/maker-deb": "^7.6.0",
+    "@electron-forge/maker-rpm": "^7.6.0",
+    "@electron-forge/maker-squirrel": "^7.6.0",
+    "@electron-forge/maker-zip": "^7.6.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.6.0",
+    "@electron-forge/plugin-fuses": "^7.6.0",
+    "@electron/fuses": "^1.8.0",
+    "electron": "^28.3.3"
   },
   "build": {
     "appId": "com.fury.mediaplayer",
@@ -33,18 +43,21 @@
       "output": "dist"
     },
     "win": {
+      "authors": "Fury",
       "target": [
         "nsis"
       ],
       "icon": "build/icon.ico"
     },
     "mac": {
+      "authors": "Fury",
       "target": [
         "dmg"
       ],
       "icon": "build/icon.icns"
     },
     "linux": {
+      "authors": "Fury",
       "target": [
         "AppImage"
       ],
