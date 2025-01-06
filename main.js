@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const fs = require('fs').promises;
 const path = require('path');
 const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
@@ -25,7 +26,8 @@ function createWindow() {
   });
   
   // Set the application menu
-  const menu = Menu.buildFromTemplate(createMenuTemplate(mainWindow));
+  menuTemplate = createMenuTemplate(mainWindow);
+  const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
   
   mainWindow.loadFile('index.html');
@@ -52,16 +54,22 @@ autoUpdater.on('checking-for-update', () => {
 });
 
 autoUpdater.on('update-available', (info) => {
+  const releaseNotes = info.releaseNotes || 'No release notes available';
+  const formattedNotes = typeof releaseNotes === 'string' ? 
+    releaseNotes : 
+    releaseNotes.reduce((acc, note) => acc + `${note.version}\n${note.note}\n\n`, '');
+
   dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Available',
-      message: `Version ${info.version} is available. Would you like to download it now?`,
-      buttons: ['Yes', 'No']
+    type: 'info',
+    title: 'Update Available',
+    message: `Version ${info.version} is available.`,
+    detail: `Release Notes:\n${formattedNotes}\n\nWould you like to download it now?`,
+    buttons: ['Yes', 'No']
   }).then((result) => {
-      if (result.response === 0) {
-          autoUpdater.downloadUpdate();
-          mainWindow.webContents.send('update-message', 'Downloading update...');
-      }
+    if (result.response === 0) {
+      autoUpdater.downloadUpdate();
+      mainWindow.webContents.send('update-message', 'Downloading update...');
+    }
   });
 });
 
@@ -93,7 +101,14 @@ ipcMain.handle('open-files', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
       filters: [
-          { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mp3', 'wav', 'webm'] }
+          { name: 'Media Files', 
+            extensions: [
+              // Video formats
+              'mp4', 'mkv', 'avi', 'webm', 'mov', 'flv', 'm4v', '3gp', 'wmv',
+              // Audio formats
+              'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma', 'opus'
+            ] 
+          }
       ]
   });
   return result.filePaths;

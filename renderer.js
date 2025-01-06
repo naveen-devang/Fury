@@ -4,15 +4,13 @@ const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
 
-// Add to the top of renderer.js
-const { parseSubtitles } = require('./subtitle-parser');
-const SubtitleTrackManager = require('./track-manager');
-const SubtitleControls = require('./subtitle-controls');
-
 let playlist = [];
 let currentIndex = -1;
 let isLooping = false;
 let isShuffling = false;
+
+let clickTimeout = null;
+const doubleClickDelay = 300; // milliseconds
 
 let controlsTimeout;
 let isFullscreen = false;
@@ -33,13 +31,48 @@ const loopBtn = document.getElementById('loop');
 const playbackSpeedSelect = document.getElementById('playback-speed');
 const playlistElement = document.getElementById('playlist');
 
-// Add these variables after the existing DOM element declarations in renderer.js
-const trackManager = new SubtitleTrackManager(mediaPlayer);
-const subtitleControls = new SubtitleControls(trackManager, document.querySelector('.advanced-options'));
-
 // Initialize player state
-let lastVolume = 1;
-mediaPlayer.volume = volumeSlider.value / 100;
+let lastVolume = 0.5; // 50%
+mediaPlayer.volume = 0.5;
+volumeSlider.value = 50; // Set slider to 50%
+
+// Add this event listener after other event listeners
+mediaPlayer.addEventListener('click', (e) => {
+    // Prevent text selection on double click
+    if (e.detail > 1) {
+        e.preventDefault();
+    }
+
+    // If this is the first click
+    if (!clickTimeout) {
+        clickTimeout = setTimeout(() => {
+            // If the timeout completes without a second click, it's a single click
+            if (clickTimeout) {
+                togglePlayPause();
+            }
+            clickTimeout = null;
+        }, doubleClickDelay);
+    } else {
+        // This is a double click
+        clearTimeout(clickTimeout);
+        clickTimeout = null;
+        toggleFullscreen();
+    }
+});
+
+// Clear the timeout if the user moves away or starts dragging
+mediaPlayer.addEventListener('mouseleave', () => {
+    if (clickTimeout) {
+        clearTimeout(clickTimeout);
+        clickTimeout = null;
+    }
+});
+
+mediaPlayer.addEventListener('mousedown', (e) => {
+    if (e.detail > 1) {
+        e.preventDefault();
+    }
+});
 
 // Load saved playlist
 const savedPlaylist = store.get('playlist', []);
@@ -51,8 +84,8 @@ if (savedPlaylist.length > 0) {
 function showControls() {
     const controlsOverlay = document.getElementById('controls-overlay');
     controlsOverlay.style.opacity = '1';
+    document.body.classList.remove('hide-cursor');
     
-    // Reset the timer whenever controls are shown
     if (isFullscreen) {
         clearTimeout(controlsTimeout);
         controlsTimeout = setTimeout(hideControls, INACTIVITY_TIMEOUT);
@@ -63,6 +96,7 @@ function hideControls() {
     if (isFullscreen) {
         const controlsOverlay = document.getElementById('controls-overlay');
         controlsOverlay.style.opacity = '0';
+        document.body.classList.add('hide-cursor');
     }
 }
 
@@ -154,41 +188,66 @@ document.addEventListener('keydown', (e) => {
 
 async function openFiles() {
     const filePaths = await ipcRenderer.invoke('open-files');
-    if (filePaths && filePaths.length > 0) {
-        for (const filePath of filePaths) {
-            await addToPlaylist(filePath);
-        }
-        if (currentIndex === -1) {
-            currentIndex = 0;
-            playFile(playlist[0].path);
-        }
-        store.set('playlist', playlist);
+    if (!filePaths || filePaths.length === 0) return;
+
+    // Add files with basic info first
+    const promises = filePaths.map(addToPlaylist);
+
+    if (currentIndex === -1) {
+        currentIndex = 0;
+        playFile(filePaths[0]);
     }
+
+    // Save playlist after basic info is added
+    store.set('playlist', playlist);
+
+    // Wait for metadata in background
+    await Promise.allSettled(promises);
+    store.set('playlist', playlist); // Update with complete metadata
 }
 
 async function addToPlaylist(filePath) {
+    // Add file immediately with basic info
+    const basicInfo = {
+        path: filePath,
+        metadata: {
+            title: path.basename(filePath),
+            artist: 'Loading...',
+            duration: 0
+        }
+    };
+    
+    const index = playlist.length;
+    playlist.push(basicInfo);
+    updatePlaylistUI();
+
+    // Load metadata asynchronously
     try {
         const metadata = await parseFile(filePath);
-        playlist.push({
-            path: filePath,
-            metadata: {
-                title: metadata.common.title || path.basename(filePath),
-                artist: metadata.common.artist || 'Unknown Artist',
-                duration: metadata.format.duration || 0
-            }
-        });
+        playlist[index].metadata = {
+            title: metadata.common.title || path.basename(filePath),
+            artist: metadata.common.artist || 'Unknown Artist',
+            duration: metadata.format.duration || 0
+        };
         updatePlaylistUI();
     } catch (error) {
-        console.error('Error adding file to playlist:', error);
+        console.error('Error loading metadata:', error);
+        // Keep basic info on error
     }
 }
 
 function updatePlaylistUI() {
     playlistElement.innerHTML = '';
-
+    
+    // Add a container for playlist items
+    const playlistContainer = document.createElement('div');
+    playlistContainer.className = 'playlist-container';
+    
     playlist.forEach((item, index) => {
         const element = document.createElement('div');
         element.className = `playlist-item ${index === currentIndex ? 'active' : ''}`;
+        element.draggable = true;
+        element.dataset.index = index;
         element.innerHTML = `
             <div class="playlist-item-content">
                 <span class="title">${item.metadata.title}</span>
@@ -199,6 +258,8 @@ function updatePlaylistUI() {
             </div>
         `;
         
+        element.addEventListener('dragstart', handleDragStart);
+        element.addEventListener('dragend', handleDragEnd);
         element.querySelector('.playlist-item-content').addEventListener('click', (e) => {
             if (!e.target.classList.contains('remove-button')) {
                 currentIndex = index;
@@ -211,16 +272,134 @@ function updatePlaylistUI() {
             removeFromPlaylist(index);
         });
         
-        playlistElement.appendChild(element);
+        playlistContainer.appendChild(element);
+    });
+
+    // Add bottom drop zone
+    const bottomDropZone = document.createElement('div');
+    bottomDropZone.className = 'bottom-drop-zone';
+    bottomDropZone.style.height = '50px';
+    playlistContainer.appendChild(bottomDropZone);
+
+    playlistElement.appendChild(playlistContainer);
+
+    // Add container-level drag events
+    playlistContainer.addEventListener('dragover', handleDragOver);
+    playlistContainer.addEventListener('drop', handleDrop);
+}
+
+let draggedElement = null;
+
+function handleDragStart(e) {
+    draggedElement = e.target;
+    draggedElement.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragEnd(e) {
+    draggedElement.classList.remove('dragging');
+    draggedElement = null;
+    
+    // Remove all drag-over classes
+    document.querySelectorAll('.drag-over').forEach(item => {
+        item.classList.remove('drag-over');
     });
 }
 
+function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedElement) return;
+    
+    const container = e.currentTarget;
+    const items = [...container.querySelectorAll('.playlist-item:not(.dragging)')];
+    
+    // Get mouse position relative to container
+    const mouseY = e.clientY;
+    
+    // Find the element we're hovering over
+    let closestItem = null;
+    let closestOffset = Number.NEGATIVE_INFINITY;
+    
+    items.forEach(item => {
+        const box = item.getBoundingClientRect();
+        const offset = mouseY - box.top - box.height / 2;
+        
+        if (offset < 0 && offset > closestOffset) {
+            closestOffset = offset;
+            closestItem = item;
+        }
+    });
+    
+    // Remove existing drag-over classes
+    items.forEach(item => item.classList.remove('drag-over'));
+    
+    if (closestItem) {
+        closestItem.classList.add('drag-over');
+    } else if (mouseY > items[items.length - 1]?.getBoundingClientRect().bottom) {
+        // If we're below the last item, highlight the bottom drop zone
+        container.querySelector('.bottom-drop-zone').classList.add('drag-over');
+    }
+}
+
+function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedElement) return;
+    
+    const draggedIndex = parseInt(draggedElement.dataset.index);
+    const container = e.currentTarget;
+    const items = [...container.querySelectorAll('.playlist-item:not(.dragging)')];
+    const mouseY = e.clientY;
+    
+    // Find drop position
+    let dropIndex;
+    const lastItem = items[items.length - 1];
+    
+    if (lastItem && mouseY > lastItem.getBoundingClientRect().bottom) {
+        // If dropping below last item, set to end of playlist
+        dropIndex = playlist.length;
+    } else {
+        // Find position between items
+        for (let i = 0; i < items.length; i++) {
+            const box = items[i].getBoundingClientRect();
+            if (mouseY < box.top + box.height / 2) {
+                dropIndex = parseInt(items[i].dataset.index);
+                break;
+            }
+        }
+        // If no position found above items, use last position
+        if (dropIndex === undefined) {
+            dropIndex = playlist.length;
+        }
+    }
+    
+    // Update playlist array
+    const [movedItem] = playlist.splice(draggedIndex, 1);
+    playlist.splice(dropIndex > draggedIndex ? dropIndex - 1 : dropIndex, 0, movedItem);
+    
+    // Update currentIndex
+    if (currentIndex === draggedIndex) {
+        currentIndex = dropIndex > draggedIndex ? dropIndex - 1 : dropIndex;
+    } else if (draggedIndex < currentIndex && dropIndex > currentIndex) {
+        currentIndex--;
+    } else if (draggedIndex > currentIndex && dropIndex <= currentIndex) {
+        currentIndex++;
+    }
+    
+    // Update UI and save
+    updatePlaylistUI();
+    store.set('playlist', playlist);
+}
 
 function playFile(filePath) {
     mediaPlayer.src = filePath;
+    
     mediaPlayer.play()
         .then(() => {
-            updatePlayPauseIcon(false); // false means not paused
+            updatePlayPauseIcon(false);
         })
         .catch(error => {
             console.error('Error playing file:', error);
@@ -347,6 +526,7 @@ document.addEventListener('fullscreenchange', () => {
     if (!isFullscreen) {
         clearTimeout(controlsTimeout);
         showControls();
+        ipcRenderer.send('toggle-menu-bar', true); // Add this line to show menu bar
     }
 });
 
@@ -423,50 +603,6 @@ function formatTime(seconds) {
 }
 
 // IPC Events
-
-ipcRenderer.on('menu-load-subtitles', async (_, filePaths) => {
-    try {
-        const subtitlePath = filePaths[0];
-        const vttPath = await parseSubtitles(subtitlePath);
-        
-        // Get the subtitle language from file name or default to 'en'
-        const fileName = path.basename(subtitlePath, path.extname(subtitlePath));
-        const languageMatch = fileName.match(/\b[a-z]{2,3}\b/i);
-        const language = languageMatch ? languageMatch[0].toLowerCase() : 'en';
-        
-        // Add the subtitle track
-        trackManager.addTrack(vttPath, language, `Subtitles (${language.toUpperCase()})`);
-    } catch (error) {
-        console.error('Error loading subtitles:', error);
-        dialog.showErrorBox('Subtitle Error', `Failed to load subtitles: ${error.message}`);
-    }
-});
-
-// Add this event listener in renderer.js
-ipcRenderer.on('menu-toggle-subtitles', () => {
-    const tracks = trackManager.getTracksList();
-    const currentTrack = tracks.find(track => track.isActive);
-    
-    if (currentTrack) {
-        // If there's an active track, disable it
-        trackManager.setCurrentTrack(null);
-    } else {
-        // If no track is active, enable the first available track
-        const firstTrack = tracks[0];
-        if (firstTrack) {
-            trackManager.setCurrentTrack(firstTrack.path);
-        }
-    }
-});
-
-// Add error handling for subtitle tracks in renderer.js
-mediaPlayer.addEventListener('error', (e) => {
-    if (e.target.tagName === 'TRACK') {
-        console.error('Subtitle track error:', e);
-        dialog.showErrorBox('Subtitle Error', 'Failed to load subtitle track');
-    }
-});
-
 ipcRenderer.on('menu-open-files', openFiles);
 ipcRenderer.on('menu-clear-playlist', clearPlaylist);
 ipcRenderer.on('menu-play-pause', togglePlayPause);
@@ -484,23 +620,35 @@ document.addEventListener('drop', async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const files = Array.from(e.dataTransfer.files);
-    const mediaFiles = files.filter(file => {
+    const supportedFormats = [
+        // Video
+        '.mp4', '.mkv', '.avi', '.webm', '.mov', '.flv', '.m4v', '.3gp', '.wmv',
+        // Audio
+        '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
+      ];
+    
+
+    const files = Array.from(e.dataTransfer.files)
+      .filter(file => {
         const ext = path.extname(file.path).toLowerCase();
-        return ['.mp4', '.mkv', '.avi', '.mp3', '.wav', '.webm'].includes(ext);
-    });
+        return supportedFormats.includes(ext);
+      });
 
-    for (const file of mediaFiles) {
-        await addToPlaylist(file.path);
-    }
+    const promises = files.map(file => addToPlaylist(file.path));
 
-    if (currentIndex === -1 && playlist.length > 0) {
+    if (currentIndex === -1 && files.length > 0) {
         currentIndex = 0;
-        playFile(playlist[0].path);
+        playFile(files[0].path);
     }
 
+    // Save playlist after basic info is added
     store.set('playlist', playlist);
-});
+
+    // Wait for metadata in background
+    await Promise.allSettled(promises);
+    store.set('playlist', playlist); // Update with complete metadata
+}
+);
 
 // Error handling
 mediaPlayer.addEventListener('error', (e) => {

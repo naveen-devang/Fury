@@ -49,35 +49,6 @@ const createMenuTemplate = (mainWindow) => [
         ]
     },
     {
-        label: 'Subtitles',
-        submenu: [
-            {
-                label: 'Load Subtitles',
-                accelerator: 'CmdOrCtrl+Shift+S',
-                click: async () => {
-                    const result = await dialog.showOpenDialog(mainWindow, {
-                        properties: ['openFile'],
-                        filters: [
-                            { name: 'Subtitle Files', extensions: ['vtt', 'srt', 'ass', 'ssa'] }
-                        ]
-                    });
-                    if (!result.canceled) {
-                        mainWindow.webContents.send('menu-load-subtitles', result.filePaths);
-                    }
-                }
-            },
-            {
-                label: 'Show Subtitles',
-                accelerator: 'CmdOrCtrl+Shift+V',
-                type: 'checkbox',
-                checked: false,
-                click: (menuItem) => {
-                    mainWindow.webContents.send('menu-toggle-subtitles', menuItem.checked);
-                }
-            },
-        ]
-    },
-    {
         label: 'Help',
         submenu: [
             {
@@ -103,6 +74,11 @@ const createMenuTemplate = (mainWindow) => [
                         buttons: ['OK']
                     });
                 }
+            },
+            {
+                label: 'Toggle Developer Tools',
+                accelerator: process.platform === 'darwin' ? 'Cmd+Alt+I' : 'Ctrl+Shift+I',
+                click: () => mainWindow.webContents.toggleDevTools()
             }
         ]
     }
