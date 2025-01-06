@@ -1,6 +1,6 @@
 {
   "name": "fury",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
@@ -25,9 +25,6 @@
   "build": {
     "appId": "com.fury.mediaplayer",
     "productName": "Fury",
-    "releaseInfo": {
-      "releaseNotes": true
-    },
     "directories": {
       "output": "dist"
     },

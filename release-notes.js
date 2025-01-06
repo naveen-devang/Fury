@@ -1,6 +1,6 @@
 const RELEASE_NOTES = {
-    "0.0.6": [
-      "testing release notes",
+    "0.0.7": [
+      "testing release-notes",
     ],
   };
   
