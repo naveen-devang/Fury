@@ -54,16 +54,22 @@ autoUpdater.on('checking-for-update', () => {
 });
 
 autoUpdater.on('update-available', (info) => {
+  const releaseNotes = info.releaseNotes || 'No release notes available';
+  const formattedNotes = typeof releaseNotes === 'string' ? 
+    releaseNotes : 
+    releaseNotes.reduce((acc, note) => acc + `${note.version}\n${note.note}\n\n`, '');
+
   dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Available',
-      message: `Version ${info.version} is available. Would you like to download it now?`,
-      buttons: ['Yes', 'No']
+    type: 'info',
+    title: 'Update Available',
+    message: `Version ${info.version} is available.`,
+    detail: `Release Notes:\n${formattedNotes}\n\nWould you like to download it now?`,
+    buttons: ['Yes', 'No']
   }).then((result) => {
-      if (result.response === 0) {
-          autoUpdater.downloadUpdate();
-          mainWindow.webContents.send('update-message', 'Downloading update...');
-      }
+    if (result.response === 0) {
+      autoUpdater.downloadUpdate();
+      mainWindow.webContents.send('update-message', 'Downloading update...');
+    }
   });
 });
 

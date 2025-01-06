@@ -29,6 +29,9 @@
   "build": {
     "appId": "com.fury.mediaplayer",
     "productName": "Fury",
+    "releaseInfo": {
+      "releaseNotes": true
+    },
     "directories": {
       "output": "dist"
     },
