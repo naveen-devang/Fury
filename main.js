@@ -7,8 +7,6 @@ const log = require('electron-log');
 const createMenuTemplate = require('./menu-template');
 const store = new Store();
 
-
-
 // Configure logging
 log.transports.file.level = 'debug';
 autoUpdater.logger = log;
@@ -55,17 +53,16 @@ autoUpdater.on('checking-for-update', () => {
   mainWindow.webContents.send('update-message', 'Checking for updates...');
 });
 
-const RELEASE_NOTES = require('./release-notes'); // Import release notes
-
 autoUpdater.on('update-available', (info) => {
-  const releaseVersion = info.version; // Get the version of the available update
-  const releaseNotes = RELEASE_NOTES[releaseVersion] || ['No release notes available'];
-  const formattedNotes = releaseNotes.join('\n');
+  const releaseNotes = info.releaseNotes || 'No release notes available';
+  const formattedNotes = typeof releaseNotes === 'string' ? 
+    releaseNotes : 
+    releaseNotes.reduce((acc, note) => acc + `${note.version}\n${note.note}\n\n`, '');
 
   dialog.showMessageBox(mainWindow, {
     type: 'info',
     title: 'Update Available',
-    message: `Version ${releaseVersion} is available.`,
+    message: `Version ${info.version} is available.`,
     detail: `Release Notes:\n${formattedNotes}\n\nWould you like to download it now?`,
     buttons: ['Yes', 'No']
   }).then((result) => {
