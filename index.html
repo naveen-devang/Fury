@@ -328,6 +328,17 @@
             display: flex;
             flex-direction: column;
         }
+
+        /* Subtitle styles */
+        ::cue {
+            background-color: transparent;
+            color: white;
+            text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        #subtitles.active {
+            color: var(--primary-color);
+        }
     </style>
 </head>
 <body>
@@ -361,6 +372,9 @@
                         </div>
                         
                         <div class="advanced-options">
+                            <button class="control-button" id="subtitles" title="Subtitles">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 13h4"></path><path d="M15 13h2"></path><path d="M7 9h2"></path><path d="M13 9h4"></path><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10Z"></path></svg>
+                            </button>
                             <button class="control-button" id="shuffle" title="Shuffle">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
                             </button>

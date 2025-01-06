@@ -10,9 +10,20 @@ const createMenuTemplate = (mainWindow) => [
                 click: () => mainWindow.webContents.send('menu-open-files')
             },
             {
+                label: 'Load Subtitle',
+                accelerator: 'CmdOrCtrl+Shift+S',
+                click: () => mainWindow.webContents.send('menu-load-subtitle')
+            },
+            {
                 label: 'Clear Playlist',
                 accelerator: 'CmdOrCtrl+Shift+C',
                 click: () => mainWindow.webContents.send('menu-clear-playlist')
+            },
+            { type: 'separator' },
+            {
+                label: 'Toggle Developer Tools',
+                accelerator: 'F12',
+                click: () => mainWindow.webContents.toggleDevTools()
             },
             { type: 'separator' },
             {
@@ -52,29 +63,42 @@ const createMenuTemplate = (mainWindow) => [
         label: 'Subtitles',
         submenu: [
             {
-                label: 'Load Subtitles',
-                accelerator: 'CmdOrCtrl+Shift+S',
-                click: async () => {
-                    const result = await dialog.showOpenDialog(mainWindow, {
-                        properties: ['openFile'],
-                        filters: [
-                            { name: 'Subtitle Files', extensions: ['vtt', 'srt', 'ass', 'ssa'] }
-                        ]
-                    });
-                    if (!result.canceled) {
-                        mainWindow.webContents.send('menu-load-subtitles', result.filePaths);
-                    }
-                }
+                label: 'Toggle Subtitles',
+                accelerator: 'CmdOrCtrl+Shift+V',
+                click: () => mainWindow.webContents.send('menu-toggle-subtitles')
             },
             {
-                label: 'Show Subtitles',
-                accelerator: 'CmdOrCtrl+Shift+V',
-                type: 'checkbox',
-                checked: false,
-                click: (menuItem) => {
-                    mainWindow.webContents.send('menu-toggle-subtitles', menuItem.checked);
-                }
+                label: 'Load Subtitle File',
+                accelerator: 'CmdOrCtrl+Shift+S',
+                click: () => mainWindow.webContents.send('menu-load-subtitle')
             },
+            { type: 'separator' },
+            {
+                label: 'Increase Subtitle Delay',
+                accelerator: 'H',
+                click: () => mainWindow.webContents.send('menu-subtitle-delay', 0.5)
+            },
+            {
+                label: 'Decrease Subtitle Delay',
+                accelerator: 'G',
+                click: () => mainWindow.webContents.send('menu-subtitle-delay', -0.5)
+            },
+            { type: 'separator' },
+            {
+                label: 'Increase Font Size',
+                accelerator: 'CmdOrCtrl+Shift+Up',
+                click: () => mainWindow.webContents.send('menu-subtitle-font-size', 1)
+            },
+            {
+                label: 'Decrease Font Size',
+                accelerator: 'CmdOrCtrl+Shift+Down',
+                click: () => mainWindow.webContents.send('menu-subtitle-font-size', -1)
+            },
+            { type: 'separator' },
+            {
+                label: 'Select Subtitle Track',
+                submenu: [] // This will be populated dynamically
+            }
         ]
     },
     {
@@ -85,7 +109,7 @@ const createMenuTemplate = (mainWindow) => [
                 click: () => {
                     dialog.showMessageBox(mainWindow, {
                         title: 'Keyboard Shortcuts',
-                        message: 'Space: Play/Pause\nF: Toggle Fullscreen\nCtrl+O: Open Files\nCtrl+Shift+S: Load Subtitles\nCtrl+Shift+V: Toggle Subtitles\nCtrl+Left: Previous\nCtrl+Right: Next',
+                        message: 'Space: Play/Pause\nF: Toggle Fullscreen\nCtrl+O: Open Files\nCtrl+Shift+S: Load Subtitles\nCtrl+Shift+V: Toggle Subtitles\nH: Increase Subtitle Delay\nG: Decrease Subtitle Delay\nCtrl+Shift+Up: Increase Subtitle Size\nCtrl+Shift+Down: Decrease Subtitle Size\nCtrl+Left: Previous\nCtrl+Right: Next',
                         buttons: ['OK']
                     });
                 }
@@ -107,5 +131,6 @@ const createMenuTemplate = (mainWindow) => [
         ]
     }
 ];
+
 
 module.exports = createMenuTemplate;
