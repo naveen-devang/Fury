@@ -620,11 +620,19 @@ document.addEventListener('drop', async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
+    const supportedFormats = [
+        // Video
+        '.mp4', '.mkv', '.avi', '.webm', '.mov', '.flv', '.m4v', '.3gp', '.wmv',
+        // Audio
+        '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
+      ];
+    
+
     const files = Array.from(e.dataTransfer.files)
-        .filter(file => {
-            const ext = path.extname(file.path).toLowerCase();
-            return ['.mp4', '.mkv', '.avi', '.mp3', '.wav', '.webm'].includes(ext);
-        });
+      .filter(file => {
+        const ext = path.extname(file.path).toLowerCase();
+        return supportedFormats.includes(ext);
+      });
 
     const promises = files.map(file => addToPlaylist(file.path));
 

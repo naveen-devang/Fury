@@ -101,7 +101,14 @@ ipcMain.handle('open-files', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile', 'multiSelections'],
       filters: [
-          { name: 'Media Files', extensions: ['mp4', 'mkv', 'avi', 'mp3', 'wav', 'webm'] }
+          { name: 'Media Files', 
+            extensions: [
+              // Video formats
+              'mp4', 'mkv', 'avi', 'webm', 'mov', 'flv', 'm4v', '3gp', 'wmv',
+              // Audio formats
+              'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma', 'opus'
+            ] 
+          }
       ]
   });
   return result.filePaths;

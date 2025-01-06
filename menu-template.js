@@ -74,6 +74,11 @@ const createMenuTemplate = (mainWindow) => [
                         buttons: ['OK']
                     });
                 }
+            },
+            {
+                label: 'Toggle Developer Tools',
+                accelerator: process.platform === 'darwin' ? 'Cmd+Alt+I' : 'Ctrl+Shift+I',
+                click: () => mainWindow.webContents.toggleDevTools()
             }
         ]
     }
