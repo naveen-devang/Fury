@@ -26,7 +26,8 @@ function createWindow() {
   });
   
   // Set the application menu
-  const menu = Menu.buildFromTemplate(createMenuTemplate(mainWindow));
+  menuTemplate = createMenuTemplate(mainWindow);
+  const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
   
   mainWindow.loadFile('index.html');
@@ -107,46 +108,4 @@ ipcMain.handle('open-files', async () => {
  ipcMain.on('toggle-menu-bar', (_, show) => {
   mainWindow.setMenuBarVisibility(show);
   mainWindow.setAutoHideMenuBar(!show);
-});
-
-let currentSubtitleTrack = -1;
-
-// Add these IPC handlers in your main.js
-ipcMain.handle('open-subtitle-file', async () => {
-  return dialog.showOpenDialog({
-      properties: ['openFile'],
-      filters: [
-          { name: 'Subtitle Files', extensions: ['srt', 'vtt', 'ass', 'ssa'] }
-      ]
-  });
-});
-
-ipcMain.handle('read-subtitle-file', async (_, filePath) => {
-  try {
-      return await fs.readFile(filePath, 'utf8');
-  } catch (error) {
-      console.error('Error reading subtitle file:', error);
-      throw error;
-  }
-});
-
-// Handle dynamic subtitle track menu updates
-ipcMain.on('update-subtitle-tracks', (event, tracks) => {
-  const window = BrowserWindow.fromWebContents(event.sender);
-  const menu = Menu.getApplicationMenu();
-  const subtitlesMenu = menu.items.find(item => item.label === 'Subtitles');
-  const trackSubmenu = subtitlesMenu.submenu.items.find(item => item.label === 'Select Subtitle Track');
-  
-  trackSubmenu.submenu = Menu.buildFromTemplate(
-      tracks.map((track, index) => ({
-          label: track.label,
-          type: 'radio',
-          checked: index === currentSubtitleTrack,
-          click: () => {
-              window.webContents.send('select-subtitle-track', index);
-          }
-      }))
-  );
-  
-  Menu.setApplicationMenu(menu);
 });
