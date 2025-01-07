@@ -95,33 +95,32 @@ class SubtitleManager {
             if (subtitlePath.toLowerCase().endsWith('.srt')) {
                 subtitleContent = await this.convertSrtToVtt(content);
             }
-
+    
             const blob = new Blob([subtitleContent], { type: 'text/vtt' });
             const blobUrl = URL.createObjectURL(blob);
-
+    
             const fileName = path.basename(subtitlePath);
             const trackLabel = label || fileName;
-
-            // Remove existing track with the same label if it exists
-            const existingTrack = Array.from(this.mediaPlayer.textTracks).find(t => t.label === trackLabel);
-            if (existingTrack) {
-                this.mediaPlayer.removeChild(existingTrack);
+    
+            // Correct way to remove an existing text track
+            const existingTrackIndex = Array.from(this.mediaPlayer.textTracks).findIndex(t => t.label === trackLabel);
+            if (existingTrackIndex !== -1) {
+                this.mediaPlayer.textTracks.removeTrack(this.mediaPlayer.textTracks[existingTrackIndex]);
             }
-
-            // Explicitly disable all existing tracks first
+    
+            // Explicitly disable all existing tracks first (Good practice)
             Array.from(this.mediaPlayer.textTracks).forEach(track => {
                 track.mode = 'disabled';
             });
-
+    
             const track = document.createElement('track');
             track.kind = 'subtitles';
             track.label = trackLabel;
             track.srclang = language;
             track.src = blobUrl;
-            // Important: Set default mode to hidden instead of disabled
             track.default = false;
-            track.mode = 'hidden';
-            
+            track.mode = 'hidden'; // Start hidden
+    
             const trackInfo = {
                 track: track,
                 blobUrl: blobUrl,
@@ -129,13 +128,12 @@ class SubtitleManager {
                 language: language,
                 label: trackLabel
             };
-
+    
             this.subtitleTracks.set(subtitlePath, trackInfo);
             this.mediaPlayer.appendChild(track);
-
-            // Add to menu
+    
             this.addSubtitleMenuItem(trackLabel, trackInfo);
-
+    
             return track;
         } catch (error) {
             console.error('Error loading subtitle content:', error);

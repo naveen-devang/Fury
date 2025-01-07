@@ -1,5 +1,5 @@
 const RELEASE_NOTES = {
-    "0.0.9": [
+    "0.0.10": [
       "fixed bug with ffprobe",
     ],
   };
