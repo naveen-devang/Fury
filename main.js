@@ -131,56 +131,79 @@ ipcMain.handle('open-subtitle', async () => {
   return result.filePaths;
 });
 
+async function validateSubtitleFile(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+      throw new Error('Invalid file path provided');
+  }
+
+  try {
+      const stats = await fs.stat(filePath);
+      if (!stats.isFile()) {
+          throw new Error('Path does not point to a valid file');
+      }
+      return true;
+  } catch (error) {
+      if (error.code === 'ENOENT') {
+          throw new Error(`File not found: ${filePath}`);
+      }
+      throw error;
+  }
+}
+
+// Helper function to safely read file content
+async function readFileContent(filePath) {
+  try {
+      return await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+      if (error.code === 'ENOENT') {
+          throw new Error(`File not found: ${filePath}`);
+      }
+      throw new Error(`Error reading file: ${error.message}`);
+  }
+}
+
 ipcMain.handle('read-subtitle-file', async (_, filePath) => {
   try {
-      const content = await fs.readFile(filePath, 'utf8');
-      const extension = path.extname(filePath).toLowerCase();
+      // Validate and normalize the file path
+      const normalizedPath = path.normalize(filePath);
+      await validateSubtitleFile(normalizedPath);
+      
+      // Read the file content
+      const content = await readFileContent(normalizedPath);
+      const extension = path.extname(normalizedPath).toLowerCase();
       
       // Convert content based on file type
       switch (extension) {
           case '.srt':
-              // Convert SRT to VTT
-              return new Promise((resolve, reject) => {
-                  let vttContent = '';
-                  const srtStream = Readable.from(content);
-                  const converter = new srt2vtt();
-                  
-                  converter.on('data', chunk => {
-                      vttContent += chunk.toString();
-                  });
-                  
-                  converter.on('end', () => {
-                      resolve(vttContent);
-                  });
-                  
-                  converter.on('error', (err) => {
-                      reject(new Error(`Error converting SRT: ${err.message}`));
-                  });
-                  
-                  srtStream.pipe(converter);
-              });
+              return await convertSrtToVtt(content);
               
           case '.vtt':
-              // VTT can be used as-is
+              // Validate VTT content
+              if (!content.trim().startsWith('WEBVTT')) {
+                  throw new Error('Invalid VTT file format');
+              }
               return content;
               
           case '.ass':
           case '.ssa':
-              // Convert ASS/SSA to VTT format
-              return convertAssToVtt(content);
+              return await convertAssToVtt(content);
               
           case '.ttml':
-          case '.dfxp':  // DFXP is another name for TTML
-              // Convert TTML to VTT format
-              return convertTtmlToVtt(content);
+          case '.dfxp':
+              return await convertTtmlToVtt(content);
               
           default:
               throw new Error(`Unsupported subtitle format: ${extension}`);
       }
   } catch (error) {
-      throw new Error(`Error reading subtitle file: ${error.message}`);
+      // Log the full error for debugging
+      console.error('Subtitle processing error:', error);
+      
+      // Send a user-friendly error message
+      throw new Error(`Error processing subtitle file: ${error.message}`);
   }
 });
+
 
 ipcMain.handle('read-directory', async (_, dirPath) => {
   try {
@@ -190,6 +213,28 @@ ipcMain.handle('read-directory', async (_, dirPath) => {
       throw error;
   }
 });
+
+function convertSrtToVtt(content) {
+  return new Promise((resolve, reject) => {
+      let vttContent = '';
+      const srtStream = Readable.from(content);
+      const converter = new srt2vtt();
+      
+      converter.on('data', chunk => {
+          vttContent += chunk.toString();
+      });
+      
+      converter.on('end', () => {
+          resolve(vttContent);
+      });
+      
+      converter.on('error', (err) => {
+          reject(new Error(`Error converting SRT: ${err.message}`));
+      });
+      
+      srtStream.pipe(converter);
+  });
+}
 
 function convertAssToVtt(assContent) {
   const lines = assContent.split('\n');
