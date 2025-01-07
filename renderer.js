@@ -29,6 +29,9 @@ let isShuffling = false;
 let currentSubtitleTrack = null;
 let subtitlesEnabled = true;
 
+let activeSubtitleTrack = null;
+let subtitleTracks = new Map(); // Store subtitle tracks with their sources
+
 let clickTimeout = null;
 const doubleClickDelay = 300; // milliseconds
 
@@ -50,6 +53,9 @@ const shuffleBtn = document.getElementById('shuffle');
 const loopBtn = document.getElementById('loop');
 const playbackSpeedSelect = document.getElementById('playback-speed');
 const playlistElement = document.getElementById('playlist');
+
+const subtitleMenu = createSubtitleMenu();
+document.getElementById('subtitles').parentElement.appendChild(subtitleMenu);
 
 // Initialize player state
 let lastVolume = 0.5; // 50%
@@ -101,6 +107,34 @@ if (savedPlaylist.length > 0) {
     updatePlaylistUI();
 }
 
+
+function createSubtitleMenu() {
+    const menu = document.createElement('div');
+    menu.className = 'subtitle-menu';
+    menu.style.cssText = `
+        position: absolute;
+        bottom: 100%;
+        right: 0;
+        background: var(--control-bg);
+        border-radius: 4px;
+        padding: 8px;
+        display: none;
+        z-index: 1001;
+    `;
+
+    // Add "Off" option
+    const offTrack = document.createElement('div');
+    offTrack.className = 'subtitle-track';
+    offTrack.textContent = 'Off';
+    offTrack.addEventListener('click', () => {
+        disableAllSubtitles();
+        menu.style.display = 'none';
+    });
+    menu.appendChild(offTrack);
+
+    return menu;
+}
+
 // Load saved subtitle associations
 function loadSavedSubtitleAssociations() {
     const savedAssociations = subtitleStore.get('associations') || {};
@@ -143,7 +177,17 @@ loopBtn.addEventListener('click', toggleLoop);
 playbackSpeedSelect.addEventListener('change', changePlaybackSpeed);
 volumeSlider.addEventListener('input', updateVolume);
 timeSlider.addEventListener('input', seekMedia);
-document.getElementById('subtitles').addEventListener('click', toggleSubtitles);
+document.getElementById('subtitles').addEventListener('click', (e) => {
+    e.stopPropagation();
+    subtitleMenu.style.display = subtitleMenu.style.display === 'none' ? 'block' : 'none';
+});
+
+// Close menu when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.subtitle-menu') && !e.target.closest('#subtitles')) {
+        subtitleMenu.style.display = 'none';
+    }
+});
 
 // Set initial button states
 loopBtn.style.opacity = isLooping ? '1' : '0.5';
@@ -390,85 +434,195 @@ async function loadSubtitles() {
         const filePaths = await ipcRenderer.invoke('open-subtitle');
         if (!filePaths || filePaths.length === 0) return;
 
-        const subtitlePath = filePaths[0];
-        const currentMediaPath = path.resolve(playlist[currentIndex].path);
-        
-        try {
-            const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', subtitlePath);
-            await loadSubtitleContent(subtitleContent, subtitlePath);
+        for (const subtitlePath of filePaths) {
+            const currentMediaPath = path.resolve(playlist[currentIndex].path);
             
-            // Save the association
-            mediaSubtitleMap.set(currentMediaPath, subtitlePath);
-            saveSubtitleAssociations();
-            
-            console.log('Subtitle associated with:', currentMediaPath);
-        } catch (error) {
-            throw new Error(`Error loading subtitle file: ${error.message}`);
+            try {
+                const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', subtitlePath);
+                const label = path.basename(subtitlePath, path.extname(subtitlePath));
+                
+                // Try to detect language from filename
+                const langMatch = label.match(/\.(eng|en|spa|es|fra|fr|ger|de|ita|it|por|pt|rus|ru|jpn|ja|kor|ko|chi|zh)$/i);
+                const language = langMatch ? langMatch[1].substring(0, 2).toLowerCase() : 'en';
+                
+                await loadSubtitleContent(subtitleContent, subtitlePath, language, label);
+                
+                // Save the association (now as an array)
+                const currentAssociations = mediaSubtitleMap.get(currentMediaPath) || [];
+                if (!currentAssociations.includes(subtitlePath)) {
+                    currentAssociations.push(subtitlePath);
+                    mediaSubtitleMap.set(currentMediaPath, currentAssociations);
+                    saveSubtitleAssociations();
+                }
+            } catch (error) {
+                console.error(`Error loading subtitle file ${subtitlePath}:`, error);
+                alert(`Error loading subtitle: ${error.message}\nPlease check if the subtitle file is valid and try again.`);
+            }
         }
-
     } catch (error) {
         console.error('Subtitle loading error:', error);
-        alert(`Error loading subtitles: ${error.message}\nPlease check if the subtitle file is valid and try again.`);
+        alert(`Error loading subtitles: ${error.message}`);
     }
 }
 
-async function loadSubtitleContent(content, subtitlePath) {
-    // Clear existing subtitle tracks first
-    clearSubtitles();
+async function loadSubtitleContent(content, subtitlePath, language = 'en', label = null) {
+    try {
+        // Convert SRT to VTT if necessary
+        let subtitleContent = content;
+        if (subtitlePath.toLowerCase().endsWith('.srt')) {
+            subtitleContent = await convertSrtToVtt(content);
+        }
 
-    // Create a blob URL for the subtitle content
-    const blob = new Blob([content], { type: 'text/vtt' });
-    const blobUrl = URL.createObjectURL(blob);
+        const blob = new Blob([subtitleContent], { type: 'text/vtt' });
+        const blobUrl = URL.createObjectURL(blob);
 
-    // Create new track element
-    const track = document.createElement('track');
-    track.kind = 'subtitles';
-    track.label = 'External Subtitles';
-    track.srclang = 'en';
-    track.src = blobUrl;
-    track.default = true;
+        // Generate a descriptive label
+        const fileName = path.basename(subtitlePath);
+        const trackLabel = label || `${language.toUpperCase()} Subtitles`;
 
-    // Add error handling
-    await new Promise((resolve, reject) => {
-        track.addEventListener('load', resolve);
-        track.addEventListener('error', reject);
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.label = trackLabel;
+        track.srclang = language;
+        track.src = blobUrl;
+        track.default = false; // Set default to false initially
+
+        // Create track info object
+        const trackInfo = {
+            track: track,
+            blobUrl: blobUrl,
+            path: subtitlePath,
+            language: language,
+            label: trackLabel
+        };
+
+        // Store track info before adding to player
+        subtitleTracks.set(subtitlePath, trackInfo);
+
+        // Add track to player
         mediaPlayer.appendChild(track);
+
+        // Add to subtitle menu
+        const menuItem = document.createElement('div');
+        menuItem.className = 'subtitle-track';
+        menuItem.textContent = trackLabel;
+        menuItem.addEventListener('click', () => {
+            console.log('Subtitle menu item clicked:', trackLabel);
+            enableSubtitleTrack(trackInfo);
+            subtitleMenu.style.display = 'none';
+        });
+        subtitleMenu.appendChild(menuItem);
+
+        // Add track load event listener
+        track.addEventListener('load', () => {
+            console.log('Track loaded:', trackLabel);
+        });
+
+        track.addEventListener('error', (e) => {
+            console.error('Track error:', e);
+        });
+
+        return track;
+    } catch (error) {
+        console.error('Error loading subtitle content:', error);
+        throw error;
+    }
+}
+
+
+function setActiveTrack(selectedTrack) {
+    // First, disable all text tracks
+    const tracks = mediaPlayer.textTracks;
+    for (let i = 0; i < tracks.length; i++) {
+        tracks[i].mode = 'disabled';  // Use 'disabled' instead of 'hidden'
+    }
+    
+    // Then enable only the selected track
+    if (selectedTrack) {
+        selectedTrack.mode = 'showing';
+    }
+}
+
+function enableSubtitleTrack(trackInfo) {
+    if (!trackInfo || !trackInfo.track) {
+        console.log('Invalid track info:', trackInfo);
+        return;
+    }
+
+    console.log('Enabling track:', trackInfo.label);
+
+    // Disable all tracks first
+    const tracks = mediaPlayer.textTracks;
+    Array.from(tracks).forEach(track => {
+        console.log('Disabling track:', track.label);
+        track.mode = 'disabled';
     });
 
-    // Enable subtitles if they were enabled
-    const textTrack = track.track;
-    textTrack.mode = subtitlesEnabled ? 'showing' : 'hidden';
+    // Enable the selected track
+    // Since trackInfo.track is the track element, we need to access its track object
+    const selectedTrack = Array.from(mediaPlayer.textTracks).find(
+        track => track.label === trackInfo.label
+    );
 
-    // Store the blob URL for cleanup
-    track.blobUrl = blobUrl;
-    currentSubtitleTrack = track;
-
-    // Update UI
-    const subtitlesBtn = document.getElementById('subtitles');
-    if (subtitlesBtn) {
-        subtitlesBtn.classList.toggle('active', subtitlesEnabled);
+    if (selectedTrack) {
+        console.log('Setting track mode to showing:', selectedTrack.label);
+        selectedTrack.mode = 'showing';
+        activeSubtitleTrack = trackInfo;
+        
+        // Update UI
+        document.getElementById('subtitles').classList.add('active');
+        
+        // Update menu items
+        const menuItems = subtitleMenu.querySelectorAll('.subtitle-track');
+        menuItems.forEach(item => {
+            item.classList.toggle('active', item.textContent === trackInfo.label);
+        });
+    } else {
+        console.error('Could not find matching text track:', trackInfo.label);
     }
 }
+
+// Modified disableAllSubtitles function
+function disableAllSubtitles() {
+    // Disable all text tracks
+    Array.from(mediaPlayer.textTracks).forEach(track => {
+        track.mode = 'disabled';
+    });
+
+    activeSubtitleTrack = null;
+    document.getElementById('subtitles').classList.remove('active');
+
+    // Update menu items
+    const menuItems = subtitleMenu.querySelectorAll('.subtitle-track');
+    menuItems.forEach(item => item.classList.remove('active'));
+}
+
 
 // Load saved subtitle associations when the app starts
 loadSavedSubtitleAssociations();
 
 // Add cleanup for blob URLs in clearSubtitles function:
 function clearSubtitles() {
+    // Clean up existing tracks
     const tracks = Array.from(mediaPlayer.getElementsByTagName('track'));
     tracks.forEach(track => {
-        // Clean up blob URL if it exists
-        if (track.blobUrl) {
-            URL.revokeObjectURL(track.blobUrl);
-        }
-        // Properly cleanup event listeners
-        track.removeEventListener('load', () => {});
-        track.removeEventListener('error', () => {});
         mediaPlayer.removeChild(track);
     });
-    currentSubtitleTrack = null;
-}
 
+    // Clean up stored tracks
+    subtitleTracks.forEach(trackInfo => {
+        URL.revokeObjectURL(trackInfo.blobUrl);
+    });
+    
+    // Clear the menu
+    while (subtitleMenu.children.length > 1) { // Keep the "Off" option
+        subtitleMenu.removeChild(subtitleMenu.lastChild);
+    }
+
+    subtitleTracks.clear();
+    activeSubtitleTrack = null;
+    document.getElementById('subtitles').classList.remove('active');
+}
 
 function toggleSubtitles() {
     subtitlesEnabled = !subtitlesEnabled;
@@ -618,7 +772,7 @@ async function playFile(filePath) {
                 alert('Error playing file. The file may be invalid or unsupported.');
                 return;
             }
-
+        
             // Set the source and play
             mediaPlayer.src = mediaUrl;
             
@@ -626,46 +780,101 @@ async function playFile(filePath) {
             const subtitleStreams = metadata.streams.filter(stream => 
                 stream.codec_type === 'subtitle'
             );
-
+        
+            let englishTrackFound = false;
+        
             if (subtitleStreams.length > 0) {
+                // Sort streams to prioritize English subtitles
+                const sortedStreams = [...subtitleStreams].sort((a, b) => {
+                    const aIsEng = (a.tags?.language === 'eng' || a.tags?.language === 'en');
+                    const bIsEng = (b.tags?.language === 'eng' || b.tags?.language === 'en');
+                    return bIsEng - aIsEng;  // Put English tracks first
+                });
+        
                 // Create tracks for each embedded subtitle
-                subtitleStreams.forEach(stream => {
+                sortedStreams.forEach((stream, index) => {
                     const track = document.createElement('track');
                     track.kind = 'subtitles';
                     track.label = stream.tags?.title || `Subtitle Track ${stream.index}`;
                     track.srclang = stream.tags?.language || 'und';
                     track.src = `file://${fileUrl.replace(/\\/g, '/')}#${stream.index}`;
-                    track.default = stream.disposition?.default === 1;
+                    
+                    // Set mode to disabled initially
+                    track.mode = 'disabled';
+                    
+                    // Check if this is an English track
+                    const isEnglish = (stream.tags?.language === 'eng' || stream.tags?.language === 'en');
+                    
+                    if (isEnglish && !englishTrackFound) {
+                        englishTrackFound = true;
+                        // Use a setTimeout to ensure track is properly loaded before enabling
+                        setTimeout(() => {
+                            track.mode = 'showing';
+                        }, 100);
+                    }
+                    
                     mediaPlayer.appendChild(track);
                 });
             }
-
-            // Then try to load external subtitle files found in the same directory
-            for (const subtitlePath of subtitleFiles) {
-                try {
-                    const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', subtitlePath);
-                    await loadSubtitleContent(subtitleContent, subtitlePath);
-                    console.log('Loaded matching subtitle:', subtitlePath);
-                    break; // Load only the first matching subtitle
-                } catch (error) {
-                    console.error('Error loading subtitle:', error);
+        
+            // Load external subtitle files
+            const subtitleFiles = await findMatchingSubtitles(fileUrl);
+            
+            // Only load external subtitles if no English embedded subtitle was found
+            if (!englishTrackFound) {
+                for (const subtitlePath of subtitleFiles) {
+                    try {
+                        const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', subtitlePath);
+                        // Detect language from file name
+                        const fileName = path.basename(subtitlePath).toLowerCase();
+                        let language = 'en'; // default
+                        
+                        if (fileName.includes('.kr') || fileName.includes('.kor')) {
+                            language = 'ko';
+                        } else if (fileName.includes('.en') || fileName.includes('.eng')) {
+                            language = 'en';
+                        }
+                        
+                        const track = await loadSubtitleContent(subtitleContent, subtitlePath, language);
+                        
+                        // Enable English track if found and no embedded English track exists
+                        if (language === 'en' && !englishTrackFound) {
+                            englishTrackFound = true;
+                            setTimeout(() => {
+                                track.mode = 'showing';
+                            }, 100);
+                        }
+                    } catch (error) {
+                        console.error('Error loading subtitle:', error);
+                    }
                 }
             }
-
-            // Finally, try loading associated subtitle if none found automatically
-            if (!subtitleFiles.length && mediaSubtitleMap.has(fileUrl)) {
-                const savedSubtitlePath = mediaSubtitleMap.get(fileUrl);
-                try {
-                    const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', savedSubtitlePath);
-                    await loadSubtitleContent(subtitleContent, savedSubtitlePath);
-                    console.log('Loaded associated subtitles:', savedSubtitlePath);
-                } catch (error) {
-                    console.error('Error loading saved subtitles:', error);
-                    mediaSubtitleMap.delete(fileUrl);
-                    saveSubtitleAssociations();
+        
+            // Finally, try loading associated subtitles if none found automatically
+            if (!englishTrackFound && mediaSubtitleMap.has(fileUrl)) {
+                const savedSubtitlePaths = mediaSubtitleMap.get(fileUrl);
+                if (Array.isArray(savedSubtitlePaths)) {
+                    for (const savedSubtitlePath of savedSubtitlePaths) {
+                        try {
+                            const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', savedSubtitlePath);
+                            await loadSubtitleContent(subtitleContent, savedSubtitlePath);
+                        } catch (error) {
+                            console.error('Error loading saved subtitles:', error);
+                        }
+                    }
                 }
             }
-
+        
+            // If no English track was found and enabled, try enabling the first available track
+            setTimeout(() => {
+                if (!englishTrackFound && mediaPlayer.textTracks.length > 0) {
+                    const firstTrack = mediaPlayer.textTracks[0];
+                    if (firstTrack) {
+                        firstTrack.mode = 'showing';
+                    }
+                }
+            }, 100);
+        
             mediaPlayer.play()
                 .then(() => {
                     updatePlayPauseIcon(false);
@@ -675,7 +884,7 @@ async function playFile(filePath) {
                     console.error('Error playing file:', error);
                     alert('Error playing file. The file may be invalid or unsupported.');
                 });
-
+        
             updatePlaylistUI();
             updateWindowTitle();
         });
@@ -860,19 +1069,46 @@ function isMatchingSubtitle(videoPath, subtitlePath) {
     // Check for exact match
     if (subtitleBaseName === videoBaseName) return true;
     
-    // Check for common patterns
-    const patterns = [
-        `${videoBaseName}.eng`,
-        `${videoBaseName}.en`,
-        `${videoBaseName}.english`,
-        `${videoBaseName}_eng`,
-        `${videoBaseName}_en`,
-        `${videoBaseName}_english`,
-        `${videoBaseName}.forced`,
-        `${videoBaseName}.default`
+    // Common language codes
+    const languageCodes = [
+        'eng', 'en', 'english',
+        'kor', 'ko', 'korean',
+        'jpn', 'ja', 'japanese',
+        'chi', 'zh', 'chinese',
+        'spa', 'es', 'spanish',
+        'fre', 'fr', 'french',
+        'ger', 'de', 'german'
     ];
     
-    return patterns.some(pattern => subtitleBaseName.toLowerCase() === pattern.toLowerCase());
+    // Generate patterns for all language codes
+    const patterns = [];
+    
+    // Add base patterns
+    patterns.push(videoBaseName); // Exact match
+    
+    // Add language code patterns
+    languageCodes.forEach(lang => {
+        patterns.push(
+            `${videoBaseName}.${lang}`,
+            `${videoBaseName}_${lang}`,
+            `${videoBaseName} ${lang}`,
+            `${videoBaseName}-${lang}`
+        );
+    });
+    
+    // Add special patterns
+    patterns.push(
+        `${videoBaseName}.forced`,
+        `${videoBaseName}.default`,
+        `${videoBaseName}.sub`
+    );
+    
+    // Check if the subtitle filename matches any pattern
+    return patterns.some(pattern => {
+        const normalizedPattern = pattern.toLowerCase().replace(/[.'"\s-_]+/g, '');
+        const normalizedSubtitle = subtitleBaseName.toLowerCase().replace(/[.'"\s-_]+/g, '');
+        return normalizedSubtitle.includes(normalizedPattern) || normalizedPattern.includes(normalizedSubtitle);
+    });
 }
 
 // Modified to use ipcRenderer for file operations since we're in the renderer process

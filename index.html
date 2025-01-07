@@ -356,19 +356,19 @@
 
         /* Subtitle styles */
         .subtitle-track {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 5px 10px;
+            padding: 8px 12px;
             cursor: pointer;
+            white-space: nowrap;
+            transition: background-color 0.2s;
         }
 
         .subtitle-track:hover {
-            background: rgba(255, 255, 255, 0.1);
+            background-color: rgba(255, 255, 255, 0.1);
         }
 
         .subtitle-track.active {
-            color: var(--primary-color);
+            background-color: rgba(255, 255, 255, 0.2);
+            color: #ff8533;
         }
 
         #subtitles.active {
@@ -390,7 +390,7 @@
     <div class="app-container">
         <div class="player-section">
             <div id="player-container">
-                <video id="media-player"></video>
+                <video id="media-player" crossorigin="anonymous"></video>
                 <div id="controls-overlay">
                     <div class="time-control-row">
                         <input type="range" id="time-slider" min="0" max="100" value="0">
