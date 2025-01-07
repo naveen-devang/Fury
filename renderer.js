@@ -1,13 +1,33 @@
 const { ipcRenderer } = require('electron');
-const { parseFile } = require('music-metadata');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const ffprobePath = require('@ffprobe-installer/ffprobe').path;  // Add this line
 const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
+
+
+const fs = require('fs').promises; // Add this import at the top with other imports
+
+// Set ffmpeg path
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
+
+// Store for subtitle associations
+const subtitleStore = new Store({
+    name: 'subtitles'
+});
+
+// Track subtitle associations with media files
+let mediaSubtitleMap = new Map();
 
 let playlist = [];
 let currentIndex = -1;
 let isLooping = false;
 let isShuffling = false;
+
+let currentSubtitleTrack = null;
+let subtitlesEnabled = true;
 
 let clickTimeout = null;
 const doubleClickDelay = 300; // milliseconds
@@ -81,6 +101,18 @@ if (savedPlaylist.length > 0) {
     updatePlaylistUI();
 }
 
+// Load saved subtitle associations
+function loadSavedSubtitleAssociations() {
+    const savedAssociations = subtitleStore.get('associations') || {};
+    mediaSubtitleMap = new Map(Object.entries(savedAssociations));
+}
+
+// Save subtitle associations
+function saveSubtitleAssociations() {
+    const associations = Object.fromEntries(mediaSubtitleMap);
+    subtitleStore.set('associations', associations);
+}
+
 function showControls() {
     const controlsOverlay = document.getElementById('controls-overlay');
     controlsOverlay.style.opacity = '1';
@@ -111,6 +143,7 @@ loopBtn.addEventListener('click', toggleLoop);
 playbackSpeedSelect.addEventListener('change', changePlaybackSpeed);
 volumeSlider.addEventListener('input', updateVolume);
 timeSlider.addEventListener('input', seekMedia);
+document.getElementById('subtitles').addEventListener('click', toggleSubtitles);
 
 // Set initial button states
 loopBtn.style.opacity = isLooping ? '1' : '0.5';
@@ -187,52 +220,111 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function openFiles() {
-    const filePaths = await ipcRenderer.invoke('open-files');
-    if (!filePaths || filePaths.length === 0) return;
+    try {
+        const filePaths = await ipcRenderer.invoke('open-files');
+        if (!filePaths || filePaths.length === 0) return;
 
-    // Add files with basic info first
-    const promises = filePaths.map(addToPlaylist);
+        for (const filePath of filePaths) {
+            try {
+                await addToPlaylist(filePath);
+            } catch (error) {
+                console.error(`Error adding file ${filePath}:`, error);
+            }
+        }
 
-    if (currentIndex === -1) {
-        currentIndex = 0;
-        playFile(filePaths[0]);
+        if (currentIndex === -1) {
+            currentIndex = 0;
+            playFile(playlist[0].path);
+        }
+
+        // Save playlist after adding files
+        store.set('playlist', playlist);
+    } catch (error) {
+        console.error('Error in openFiles:', error);
     }
-
-    // Save playlist after basic info is added
-    store.set('playlist', playlist);
-
-    // Wait for metadata in background
-    await Promise.allSettled(promises);
-    store.set('playlist', playlist); // Update with complete metadata
 }
 
 async function addToPlaylist(filePath) {
-    // Add file immediately with basic info
-    const basicInfo = {
-        path: filePath,
-        metadata: {
-            title: path.basename(filePath),
-            artist: 'Loading...',
-            duration: 0
-        }
-    };
-    
-    const index = playlist.length;
-    playlist.push(basicInfo);
-    updatePlaylistUI();
-
-    // Load metadata asynchronously
     try {
-        const metadata = await parseFile(filePath);
-        playlist[index].metadata = {
-            title: metadata.common.title || path.basename(filePath),
-            artist: metadata.common.artist || 'Unknown Artist',
-            duration: metadata.format.duration || 0
+        // First check if file exists and is readable
+        const fileUrl = path.resolve(filePath);
+        
+        // Add file immediately with basic info
+        const basicInfo = {
+            path: fileUrl,
+            metadata: {
+                title: path.basename(filePath),
+                artist: 'Loading...',
+                duration: 0
+            }
         };
+        
+        const index = playlist.length;
+        playlist.push(basicInfo);
         updatePlaylistUI();
+
+        // Start playing immediately if it's the first file
+        if (playlist.length === 1) {
+            currentIndex = 0;
+            playFile(fileUrl);
+        }
+
+        // Load metadata asynchronously
+        ffmpeg.ffprobe(fileUrl, (err, metadata) => {
+            if (err) {
+                console.error('Error checking media file:', err);
+                alert('Error playing file. The file may be invalid or unsupported.');
+                return;
+            }
+        
+            // Clear existing subtitles
+            clearSubtitles();
+        
+            // Check for embedded subtitles
+            const subtitleStreams = metadata.streams.filter(stream => 
+                stream.codec_type === 'subtitle'
+            );
+        
+            if (subtitleStreams.length > 0) {
+                // Create tracks for each embedded subtitle
+                subtitleStreams.forEach(stream => {
+                    const track = document.createElement('track');
+                    track.kind = 'subtitles';
+                    track.label = stream.tags?.title || `Subtitle Track ${stream.index}`;
+                    track.srclang = stream.tags?.language || 'und';
+                    track.src = `file://${fileUrl.replace(/\\/g, '/')}#${stream.index}`;
+                    track.default = stream.disposition?.default === 1;
+                    mediaPlayer.appendChild(track);
+                });
+            }
+        
+
+            // Extract relevant metadata
+            const format = metadata.format;
+            const streams = metadata.streams;
+            const tags = format.tags || {};
+            
+            // Get the first audio/video stream
+            const mediaStream = streams.find(s => s.codec_type === 'audio' || s.codec_type === 'video');
+            
+            // Update playlist item with full metadata
+            playlist[index].metadata = {
+                title: tags.title || tags.TITLE || path.basename(filePath),
+                artist: tags.artist || tags.ARTIST || tags.album_artist || tags.ALBUM_ARTIST || 'Unknown Artist',
+                duration: format.duration || 0,
+                bitrate: format.bit_rate,
+                codec: mediaStream ? mediaStream.codec_name : 'unknown',
+                type: mediaStream ? mediaStream.codec_type : 'unknown'
+            };
+            
+            updatePlaylistUI();
+            // Save updated playlist
+            store.set('playlist', playlist);
+        });
+
     } catch (error) {
-        console.error('Error loading metadata:', error);
-        // Keep basic info on error
+        console.error('Error in addToPlaylist:', error);
+        throw error;
     }
 }
 
@@ -286,6 +378,118 @@ function updatePlaylistUI() {
     // Add container-level drag events
     playlistContainer.addEventListener('dragover', handleDragOver);
     playlistContainer.addEventListener('drop', handleDrop);
+}
+
+async function loadSubtitles() {
+    try {
+        if (currentIndex === -1 || !playlist[currentIndex]) {
+            alert('Please select a media file first before adding subtitles.');
+            return;
+        }
+
+        const filePaths = await ipcRenderer.invoke('open-subtitle');
+        if (!filePaths || filePaths.length === 0) return;
+
+        const subtitlePath = filePaths[0];
+        const currentMediaPath = path.resolve(playlist[currentIndex].path);
+        
+        try {
+            const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', subtitlePath);
+            await loadSubtitleContent(subtitleContent, subtitlePath);
+            
+            // Save the association
+            mediaSubtitleMap.set(currentMediaPath, subtitlePath);
+            saveSubtitleAssociations();
+            
+            console.log('Subtitle associated with:', currentMediaPath);
+        } catch (error) {
+            throw new Error(`Error loading subtitle file: ${error.message}`);
+        }
+
+    } catch (error) {
+        console.error('Subtitle loading error:', error);
+        alert(`Error loading subtitles: ${error.message}\nPlease check if the subtitle file is valid and try again.`);
+    }
+}
+
+async function loadSubtitleContent(content, subtitlePath) {
+    // Clear existing subtitle tracks first
+    clearSubtitles();
+
+    // Create a blob URL for the subtitle content
+    const blob = new Blob([content], { type: 'text/vtt' });
+    const blobUrl = URL.createObjectURL(blob);
+
+    // Create new track element
+    const track = document.createElement('track');
+    track.kind = 'subtitles';
+    track.label = 'External Subtitles';
+    track.srclang = 'en';
+    track.src = blobUrl;
+    track.default = true;
+
+    // Add error handling
+    await new Promise((resolve, reject) => {
+        track.addEventListener('load', resolve);
+        track.addEventListener('error', reject);
+        mediaPlayer.appendChild(track);
+    });
+
+    // Enable subtitles if they were enabled
+    const textTrack = track.track;
+    textTrack.mode = subtitlesEnabled ? 'showing' : 'hidden';
+
+    // Store the blob URL for cleanup
+    track.blobUrl = blobUrl;
+    currentSubtitleTrack = track;
+
+    // Update UI
+    const subtitlesBtn = document.getElementById('subtitles');
+    if (subtitlesBtn) {
+        subtitlesBtn.classList.toggle('active', subtitlesEnabled);
+    }
+}
+
+// Load saved subtitle associations when the app starts
+loadSavedSubtitleAssociations();
+
+// Add cleanup for blob URLs in clearSubtitles function:
+function clearSubtitles() {
+    const tracks = Array.from(mediaPlayer.getElementsByTagName('track'));
+    tracks.forEach(track => {
+        // Clean up blob URL if it exists
+        if (track.blobUrl) {
+            URL.revokeObjectURL(track.blobUrl);
+        }
+        // Properly cleanup event listeners
+        track.removeEventListener('load', () => {});
+        track.removeEventListener('error', () => {});
+        mediaPlayer.removeChild(track);
+    });
+    currentSubtitleTrack = null;
+}
+
+
+function toggleSubtitles() {
+    subtitlesEnabled = !subtitlesEnabled;
+    
+    // Handle all text tracks
+    const textTracks = Array.from(mediaPlayer.textTracks);
+    if (textTracks.length > 0) {
+        textTracks.forEach(track => {
+            try {
+                track.mode = subtitlesEnabled ? 'showing' : 'hidden';
+            } catch (error) {
+                console.error('Error toggling subtitle track:', error);
+            }
+        });
+    }
+    
+    // Update UI
+    const subtitlesBtn = document.getElementById('subtitles');
+    if (subtitlesBtn) {
+        subtitlesBtn.classList.toggle('active', subtitlesEnabled);
+    }
 }
 
 let draggedElement = null;
@@ -394,19 +598,91 @@ function handleDrop(e) {
     store.set('playlist', playlist);
 }
 
-function playFile(filePath) {
-    mediaPlayer.src = filePath;
-    
-    mediaPlayer.play()
-        .then(() => {
-            updatePlayPauseIcon(false);
-        })
-        .catch(error => {
-            console.error('Error playing file:', error);
-            alert('Error playing file. The file may be invalid or unsupported.');
+async function playFile(filePath) {
+    try {
+        const fileUrl = path.resolve(filePath);
+        console.log('Playing file:', fileUrl);
+
+        // Clear existing subtitles before loading new ones
+        clearSubtitles();
+
+        const mediaUrl = `file://${fileUrl.replace(/\\/g, '/')}`;
+        
+        // Check for matching subtitle files in the same directory
+        const subtitleFiles = await findMatchingSubtitles(fileUrl);
+        console.log('Found matching subtitles:', subtitleFiles);
+
+        ffmpeg.ffprobe(fileUrl, async (err, metadata) => {
+            if (err) {
+                console.error('Error checking media file:', err);
+                alert('Error playing file. The file may be invalid or unsupported.');
+                return;
+            }
+
+            // Set the source and play
+            mediaPlayer.src = mediaUrl;
+            
+            // First check for embedded subtitles
+            const subtitleStreams = metadata.streams.filter(stream => 
+                stream.codec_type === 'subtitle'
+            );
+
+            if (subtitleStreams.length > 0) {
+                // Create tracks for each embedded subtitle
+                subtitleStreams.forEach(stream => {
+                    const track = document.createElement('track');
+                    track.kind = 'subtitles';
+                    track.label = stream.tags?.title || `Subtitle Track ${stream.index}`;
+                    track.srclang = stream.tags?.language || 'und';
+                    track.src = `file://${fileUrl.replace(/\\/g, '/')}#${stream.index}`;
+                    track.default = stream.disposition?.default === 1;
+                    mediaPlayer.appendChild(track);
+                });
+            }
+
+            // Then try to load external subtitle files found in the same directory
+            for (const subtitlePath of subtitleFiles) {
+                try {
+                    const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', subtitlePath);
+                    await loadSubtitleContent(subtitleContent, subtitlePath);
+                    console.log('Loaded matching subtitle:', subtitlePath);
+                    break; // Load only the first matching subtitle
+                } catch (error) {
+                    console.error('Error loading subtitle:', error);
+                }
+            }
+
+            // Finally, try loading associated subtitle if none found automatically
+            if (!subtitleFiles.length && mediaSubtitleMap.has(fileUrl)) {
+                const savedSubtitlePath = mediaSubtitleMap.get(fileUrl);
+                try {
+                    const subtitleContent = await ipcRenderer.invoke('read-subtitle-file', savedSubtitlePath);
+                    await loadSubtitleContent(subtitleContent, savedSubtitlePath);
+                    console.log('Loaded associated subtitles:', savedSubtitlePath);
+                } catch (error) {
+                    console.error('Error loading saved subtitles:', error);
+                    mediaSubtitleMap.delete(fileUrl);
+                    saveSubtitleAssociations();
+                }
+            }
+
+            mediaPlayer.play()
+                .then(() => {
+                    updatePlayPauseIcon(false);
+                    console.log('Playback started successfully');
+                })
+                .catch(error => {
+                    console.error('Error playing file:', error);
+                    alert('Error playing file. The file may be invalid or unsupported.');
+                });
+
+            updatePlaylistUI();
+            updateWindowTitle();
         });
-    updatePlaylistUI();
-    updateWindowTitle();
+    } catch (error) {
+        console.error('Error in playFile:', error);
+        alert('Error playing file. The file may be invalid or unsupported.');
+    }
 }
 
 function updatePlayPauseIcon(isPaused) {
@@ -439,6 +715,7 @@ mediaPlayer.addEventListener('pause', () => {
 mediaPlayer.addEventListener('play', () => {
     updatePlayPauseIcon(false);
 });
+
 
 function updateTimeDisplay() {
     if (!isNaN(mediaPlayer.duration)) {
@@ -554,17 +831,10 @@ function playPrevious() {
 }
 
 function removeFromPlaylist(index) {
-    if (index === currentIndex) {
-        if (playlist.length === 1) {
-            clearPlaylist();
-            return;
-        }
-        playNext();
-        if (currentIndex > index) {
-            currentIndex--;
-        }
-    } else if (index < currentIndex) {
-        currentIndex--;
+    if (index >= 0 && index < playlist.length) {
+        const mediaPath = path.resolve(playlist[index].path);
+        mediaSubtitleMap.delete(mediaPath);
+        saveSubtitleAssociations();
     }
     
     playlist.splice(index, 1);
@@ -573,12 +843,58 @@ function removeFromPlaylist(index) {
 }
 
 function clearPlaylist() {
+    mediaSubtitleMap.clear();
+    saveSubtitleAssociations();
     playlist = [];
     currentIndex = -1;
     mediaPlayer.src = '';
     updatePlaylistUI();
     updateWindowTitle();
     store.set('playlist', playlist);
+}
+
+function isMatchingSubtitle(videoPath, subtitlePath) {
+    const videoBaseName = path.basename(videoPath, path.extname(videoPath));
+    const subtitleBaseName = path.basename(subtitlePath, path.extname(subtitlePath));
+    
+    // Check for exact match
+    if (subtitleBaseName === videoBaseName) return true;
+    
+    // Check for common patterns
+    const patterns = [
+        `${videoBaseName}.eng`,
+        `${videoBaseName}.en`,
+        `${videoBaseName}.english`,
+        `${videoBaseName}_eng`,
+        `${videoBaseName}_en`,
+        `${videoBaseName}_english`,
+        `${videoBaseName}.forced`,
+        `${videoBaseName}.default`
+    ];
+    
+    return patterns.some(pattern => subtitleBaseName.toLowerCase() === pattern.toLowerCase());
+}
+
+// Modified to use ipcRenderer for file operations since we're in the renderer process
+async function findMatchingSubtitles(videoPath) {
+    try {
+        // Send request to main process to read directory
+        const files = await ipcRenderer.invoke('read-directory', path.dirname(videoPath));
+        const subtitleExtensions = ['.srt', '.vtt', '.ass', '.ssa', '.sub', '.ttml', '.dfxp'];
+        
+        // Filter for subtitle files that match the video name
+        const matchingSubtitles = files.filter(file => {
+            const ext = path.extname(file).toLowerCase();
+            return subtitleExtensions.includes(ext) && 
+                   isMatchingSubtitle(videoPath, file);
+        });
+        
+        // Return full paths
+        return matchingSubtitles.map(file => path.join(path.dirname(videoPath), file));
+    } catch (error) {
+        console.error('Error finding subtitles:', error);
+        return [];
+    }
 }
 
 function handleMediaEnd() {
@@ -609,6 +925,8 @@ ipcRenderer.on('menu-play-pause', togglePlayPause);
 ipcRenderer.on('menu-previous', playPrevious);
 ipcRenderer.on('menu-next', playNext);
 ipcRenderer.on('menu-fullscreen', toggleFullscreen);
+ipcRenderer.on('menu-load-subtitles', loadSubtitles);
+ipcRenderer.on('menu-toggle-subtitles', toggleSubtitles);
 
 // Drag and drop support
 document.addEventListener('dragover', (e) => {
@@ -620,42 +938,51 @@ document.addEventListener('drop', async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    const supportedFormats = [
-        // Video
-        '.mp4', '.mkv', '.avi', '.webm', '.mov', '.flv', '.m4v', '.3gp', '.wmv',
-        // Audio
-        '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
-      ];
-    
+    try {
+        const supportedFormats = [
+            '.mp4', '.mkv', '.avi', '.webm', '.mov', '.flv', '.m4v', '.3gp', '.wmv',
+            '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
+        ];
 
-    const files = Array.from(e.dataTransfer.files)
-      .filter(file => {
-        const ext = path.extname(file.path).toLowerCase();
-        return supportedFormats.includes(ext);
-      });
+        const files = Array.from(e.dataTransfer.files)
+            .filter(file => {
+                const ext = path.extname(file.path).toLowerCase();
+                return supportedFormats.includes(ext);
+            });
 
-    const promises = files.map(file => addToPlaylist(file.path));
+        for (const file of files) {
+            try {
+                await addToPlaylist(file.path);
+            } catch (error) {
+                console.error(`Error adding file ${file.path}:`, error);
+            }
+        }
 
-    if (currentIndex === -1 && files.length > 0) {
-        currentIndex = 0;
-        playFile(files[0].path);
+        if (currentIndex === -1 && files.length > 0) {
+            currentIndex = 0;
+            playFile(files[0].path);
+        }
+
+        store.set('playlist', playlist);
+    } catch (error) {
+        console.error('Error in drop handler:', error);
     }
-
-    // Save playlist after basic info is added
-    store.set('playlist', playlist);
-
-    // Wait for metadata in background
-    await Promise.allSettled(promises);
-    store.set('playlist', playlist); // Update with complete metadata
-}
-);
+});
 
 // Error handling
 mediaPlayer.addEventListener('error', (e) => {
     console.error('Media Player Error:', e);
+    console.error('Media Error Code:', mediaPlayer.error?.code);
+    console.error('Media Error Message:', mediaPlayer.error?.message);
+    
+    if (currentIndex >= 0 && playlist[currentIndex]) {
+        console.log('Current file path:', playlist[currentIndex].path);
+    }
+    
     alert(`Error playing media: ${mediaPlayer.error?.message || 'Unknown error'}`);
     playNext();
 });
+
 
 // Save playlist before window closes
 window.addEventListener('beforeunload', () => {

@@ -49,6 +49,21 @@ const createMenuTemplate = (mainWindow) => [
         ]
     },
     {
+        label: 'Subtitles',
+        submenu: [
+            {
+                label: 'Load Subtitles',
+                accelerator: 'CmdOrCtrl+Shift+S',
+                click: () => mainWindow.webContents.send('menu-load-subtitles')
+            },
+            {
+                label: 'Toggle Subtitles',
+                accelerator: 'CmdOrCtrl+Shift+V',
+                click: () => mainWindow.webContents.send('menu-toggle-subtitles')
+            }
+        ]
+    },
+    {
         label: 'Help',
         submenu: [
             {

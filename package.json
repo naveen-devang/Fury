@@ -13,10 +13,14 @@
     "url": "https://github.com/naveen-devang/Fury.git"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "electron-log": "^5.0.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.1.7",
-    "music-metadata": "^7.14.0"
+    "fluent-ffmpeg": "^2.1.3",
+    "srt-to-vtt": "^1.1.3",
+    "xmldom": "^0.6.0"
   },
   "devDependencies": {
     "electron": "^28.3.3",
