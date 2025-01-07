@@ -32,9 +32,10 @@
     "directories": {
       "output": "dist"
     },
-    "asar": {
-      "unpack": "node_modules/@ffprobe-installer/**/*"
-    },
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/@ffprobe-installer/**/*"
+    ],
     "win": {
       "target": [
         "nsis"
