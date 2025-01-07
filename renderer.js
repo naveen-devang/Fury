@@ -5,7 +5,6 @@ const ffprobePath = require('@ffprobe-installer/ffprobe').path;
 const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
-const fs = require('fs').promises;
 
 // Set ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegPath);
