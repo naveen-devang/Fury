@@ -33,8 +33,15 @@
       "output": "dist"
     },
     "asar": true,
-    "asarUnpack": [
-      "node_modules/@ffprobe-installer/**/*"
+    "extraResources": [
+      {
+          "from": "node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe",
+          "to": "resources/bin/ffmpeg.exe" 
+      },
+      {
+          "from": "node_modules/@ffprobe-installer/win32-x64/ffprobe.exe",
+          "to": "resources/bin/ffprobe.exe"
+      }
     ],
     "win": {
       "target": [
