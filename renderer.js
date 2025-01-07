@@ -6,9 +6,6 @@ const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
 
-const ffmpegPath = path.join(__dirname, process.env.NODE_ENV === 'development' ? 'node_modules/@ffmpeg-installer/win32-x64/ffmpeg.exe' : 'resources/bin/ffmpeg.exe');
-const ffprobePath = path.join(__dirname, process.env.NODE_ENV === 'development' ? 'node_modules/@ffprobe-installer/win32-x64/ffprobe.exe' : 'resources/bin/ffprobe.exe');
-
 // Set ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath);
