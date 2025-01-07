@@ -1,6 +1,6 @@
 const RELEASE_NOTES = {
-    "0.0.8": [
-      "fixed bug with double subtitles when",
+    "0.0.9": [
+      "fixed bug with ffprobe",
     ],
   };
   
