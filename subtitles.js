@@ -12,9 +12,25 @@ class SubtitlesManager {
         this.currentSubtitles = [];
         this.activeTrack = null;
         this.subtitleCache = new Map();
+
+        this.store = new Store();
         this.autoLoadEnabled = store.get('autoLoadSubtitles', true);
         this.defaultLanguage = store.get('defaultSubtitleLanguage', 'eng');
         this.subtitleHistory = store.get('subtitleHistory', {});
+        this.lastSelectedLanguage = store.get('lastSelectedLanguage', null);
+        this.globalSubtitleEnabled = this.store.get('globalSubtitleEnabled', false);
+
+        // Add these properties to track the last successful subtitle settings
+        this.lastSuccessfulSubtitle = this.store.get('lastSuccessfulSubtitle', null);
+        this.lastSuccessfulLanguage = this.store.get('lastSuccessfulLanguage', null);
+        
+        // Bind the new save state method
+        this.saveSubtitleState = this.saveSubtitleState.bind(this);
+        
+        // Add event listener for when the window closes
+        window.addEventListener('beforeunload', () => {
+            this.saveSubtitleState();
+        });
         
         this.supportedFormats = ['.srt', '.vtt', '.ass', '.ssa', '.sub', '.ttml', '.dfxp'];
         
@@ -60,6 +76,15 @@ class SubtitlesManager {
         this.mediaPlayer.addEventListener('loadeddata', () => {
             this.disableAllTextTracks();
         });
+    }
+
+    saveSubtitleState() {
+        // Save current subtitle state
+        this.store.set('globalSubtitleEnabled', !!this.activeTrack);
+        this.store.set('lastSuccessfulSubtitle', this.lastSuccessfulSubtitle);
+        this.store.set('lastSuccessfulLanguage', this.lastSuccessfulLanguage);
+        this.store.set('subtitleHistory', this.subtitleHistory);
+        this.store.set('lastUsedLanguage', this.lastUsedLanguage);
     }
 
     initializeSubtitleMenu() {
@@ -197,15 +222,18 @@ class SubtitlesManager {
     }
 
     async detectSubtitles(videoPath) {
-        if (!this.autoLoadEnabled) return;
+        if (!this.autoLoadEnabled && !this.globalSubtitleEnabled) return;
 
-        // Clear existing subtitles before detecting new ones
-        this.clearSubtitles();
+        // Store new video path
+        this.currentVideoPath = videoPath;
 
         const videoDir = path.dirname(videoPath);
         const videoName = path.parse(videoPath).name;
         
         try {
+            // Clear existing subtitles before detecting new ones
+            this.clearSubtitles();
+            
             const files = await fs.readdir(videoDir);
             const subtitleFiles = files.filter(file => {
                 const ext = path.extname(file).toLowerCase();
@@ -214,19 +242,52 @@ class SubtitlesManager {
                        (name.startsWith(videoName) || name.includes(videoName));
             });
 
-            // Load detected subtitles
+            // Load all detected subtitles first
             for (const subFile of subtitleFiles) {
                 await this.addSubtitleTrack(path.join(videoDir, subFile));
             }
 
-            // Make sure all tracks are initially disabled
-            this.disableAllTextTracks();
+            // Determine which subtitle to activate
+            let subtitleToActivate = null;
 
-            // Load previously used subtitle if available
-            const lastUsedSub = this.subtitleHistory[videoPath];
-            if (lastUsedSub && this.currentSubtitles.includes(lastUsedSub)) {
-                await this.setActiveSubtitle(lastUsedSub);
+            // Priority 1: Check if this video has a previously selected subtitle in history
+            if (this.subtitleHistory[videoPath]) {
+                const historicalSubtitle = this.subtitleHistory[videoPath];
+                if (this.currentSubtitles.includes(historicalSubtitle)) {
+                    subtitleToActivate = historicalSubtitle;
+                }
             }
+
+            // Priority 2: If no historical subtitle for this video, try to use the last used language
+            if (!subtitleToActivate && this.lastUsedLanguage) {
+                const matchingTrack = Array.from(this.mediaPlayer.textTracks).find(track => 
+                    track.language === this.lastUsedLanguage
+                );
+                if (matchingTrack) {
+                    subtitleToActivate = matchingTrack.dataset?.originalPath;
+                }
+            }
+
+            // Priority 3: If still no match and no lastUsedLanguage is set, use default language
+            if (!subtitleToActivate && !this.lastUsedLanguage && this.defaultLanguage) {
+                const matchingTrack = Array.from(this.mediaPlayer.textTracks).find(track => 
+                    track.language === this.defaultLanguage
+                );
+                if (matchingTrack) {
+                    subtitleToActivate = matchingTrack.dataset?.originalPath;
+                }
+            }
+
+            // Activate the chosen subtitle
+            if (subtitleToActivate) {
+                await this.setActiveSubtitle(subtitleToActivate);
+                // Store successful subtitle activation
+                this.lastSuccessfulSubtitle = subtitleToActivate;
+                this.lastSuccessfulLanguage = Array.from(this.mediaPlayer.textTracks)
+                    .find(track => track.dataset?.originalPath === subtitleToActivate)?.language;
+                this.saveSubtitleState();
+            }
+
         } catch (error) {
             console.error('Error detecting subtitles:', error);
         }
@@ -387,26 +448,38 @@ class SubtitlesManager {
         this.disableAllTextTracks();
 
         if (filePath) {
-            // Find and enable the selected track
             const trackElements = Array.from(this.mediaPlayer.getElementsByTagName('track'));
             for (const trackElement of trackElements) {
                 if (trackElement.dataset.originalPath === filePath) {
-                    // Important: Set mode after a small delay to ensure it takes effect
                     setTimeout(() => {
-                        // Disable all tracks again just to be sure
                         this.disableAllTextTracks();
-                        // Then enable the selected track
                         trackElement.track.mode = 'showing';
                         this.activeTrack = trackElement.track;
+                        
+                        // Update the last used language
+                        this.lastUsedLanguage = trackElement.srclang;
+                        this.globalSubtitleEnabled = true;
+                        this.lastSuccessfulSubtitle = filePath;
+                        this.lastSuccessfulLanguage = trackElement.srclang;
+                        
+                        // Save state
+                        this.saveSubtitleState();
                     }, 100);
 
-                    // Save to history
-                    const videoPath = this.mediaPlayer.src.replace('file://', '');
-                    this.subtitleHistory[videoPath] = filePath;
-                    store.set('subtitleHistory', this.subtitleHistory);
+                    // Store in subtitle history for this specific video
+                    this.subtitleHistory[this.currentVideoPath] = filePath;
+                    this.store.set('subtitleHistory', this.subtitleHistory);
                     break;
                 }
             }
+        } else {
+            // Subtitle turned off
+            this.globalSubtitleEnabled = false;
+            // Remove from subtitle history when explicitly turned off
+            delete this.subtitleHistory[this.currentVideoPath];
+            this.store.set('subtitleHistory', this.subtitleHistory);
+            // Don't reset lastUsedLanguage when turning off subtitles
+            this.saveSubtitleState();
         }
 
         this.updateSubtitleMenu();
