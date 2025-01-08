@@ -7,6 +7,8 @@ const log = require('electron-log');
 const createMenuTemplate = require('./menu-template');
 const store = new Store();
 
+app.commandLine.appendSwitch('force_high_performance_gpu');
+
 // Configure logging
 log.transports.file.level = 'debug';
 autoUpdater.logger = log;

@@ -81,10 +81,23 @@ class SubtitlesManager {
     saveSubtitleState() {
         // Save current subtitle state
         this.store.set('globalSubtitleEnabled', !!this.activeTrack);
-        this.store.set('lastSuccessfulSubtitle', this.lastSuccessfulSubtitle);
-        this.store.set('lastSuccessfulLanguage', this.lastSuccessfulLanguage);
+        if (this.lastSuccessfulSubtitle) {
+            this.store.set('lastSuccessfulSubtitle', this.lastSuccessfulSubtitle);
+        } else {
+            this.store.delete('lastSuccessfulSubtitle'); // Use delete
+        }
+        if (this.lastSuccessfulLanguage) {
+            this.store.set('lastSuccessfulLanguage', this.lastSuccessfulLanguage);
+        } else {
+            this.store.delete('lastSuccessfulLanguage'); // Use delete
+        }
+
         this.store.set('subtitleHistory', this.subtitleHistory);
-        this.store.set('lastUsedLanguage', this.lastUsedLanguage);
+        if (this.lastUsedLanguage) {
+            this.store.set('lastUsedLanguage', this.lastUsedLanguage);
+        } else {
+            this.store.delete('lastUsedLanguage'); // Use delete
+        }
     }
 
     initializeSubtitleMenu() {
@@ -184,7 +197,6 @@ class SubtitlesManager {
     }
 
     disableAllTextTracks() {
-        // Disable all text tracks
         Array.from(this.mediaPlayer.textTracks).forEach(track => {
             track.mode = 'disabled';
         });
@@ -223,10 +235,10 @@ class SubtitlesManager {
 
     async detectSubtitles(videoPath) {
         if (!this.autoLoadEnabled && !this.globalSubtitleEnabled) return;
-
+    
         // Store new video path
         this.currentVideoPath = videoPath;
-
+    
         const videoDir = path.dirname(videoPath);
         const videoName = path.parse(videoPath).name;
         
@@ -241,53 +253,18 @@ class SubtitlesManager {
                 return this.supportedFormats.includes(ext) && 
                        (name.startsWith(videoName) || name.includes(videoName));
             });
-
+    
             // Load all detected subtitles first
             for (const subFile of subtitleFiles) {
                 await this.addSubtitleTrack(path.join(videoDir, subFile));
             }
-
-            // Determine which subtitle to activate
-            let subtitleToActivate = null;
-
-            // Priority 1: Check if this video has a previously selected subtitle in history
-            if (this.subtitleHistory[videoPath]) {
-                const historicalSubtitle = this.subtitleHistory[videoPath];
-                if (this.currentSubtitles.includes(historicalSubtitle)) {
-                    subtitleToActivate = historicalSubtitle;
-                }
+    
+            // After loading all subtitles, activate the appropriate one
+            const historicalSubtitle = this.subtitleHistory[videoPath];
+            if (historicalSubtitle && this.currentSubtitles.includes(historicalSubtitle)) {
+                await this.setActiveSubtitle(historicalSubtitle);
             }
-
-            // Priority 2: If no historical subtitle for this video, try to use the last used language
-            if (!subtitleToActivate && this.lastUsedLanguage) {
-                const matchingTrack = Array.from(this.mediaPlayer.textTracks).find(track => 
-                    track.language === this.lastUsedLanguage
-                );
-                if (matchingTrack) {
-                    subtitleToActivate = matchingTrack.dataset?.originalPath;
-                }
-            }
-
-            // Priority 3: If still no match and no lastUsedLanguage is set, use default language
-            if (!subtitleToActivate && !this.lastUsedLanguage && this.defaultLanguage) {
-                const matchingTrack = Array.from(this.mediaPlayer.textTracks).find(track => 
-                    track.language === this.defaultLanguage
-                );
-                if (matchingTrack) {
-                    subtitleToActivate = matchingTrack.dataset?.originalPath;
-                }
-            }
-
-            // Activate the chosen subtitle
-            if (subtitleToActivate) {
-                await this.setActiveSubtitle(subtitleToActivate);
-                // Store successful subtitle activation
-                this.lastSuccessfulSubtitle = subtitleToActivate;
-                this.lastSuccessfulLanguage = Array.from(this.mediaPlayer.textTracks)
-                    .find(track => track.dataset?.originalPath === subtitleToActivate)?.language;
-                this.saveSubtitleState();
-            }
-
+    
         } catch (error) {
             console.error('Error detecting subtitles:', error);
         }
@@ -446,43 +423,49 @@ class SubtitlesManager {
     async setActiveSubtitle(filePath) {
         // First disable all tracks
         this.disableAllTextTracks();
-
+        this.activeTrack = null;
+    
         if (filePath) {
             const trackElements = Array.from(this.mediaPlayer.getElementsByTagName('track'));
-            for (const trackElement of trackElements) {
-                if (trackElement.dataset.originalPath === filePath) {
-                    setTimeout(() => {
-                        this.disableAllTextTracks();
-                        trackElement.track.mode = 'showing';
-                        this.activeTrack = trackElement.track;
-                        
-                        // Update the last used language
-                        this.lastUsedLanguage = trackElement.srclang;
-                        this.globalSubtitleEnabled = true;
-                        this.lastSuccessfulSubtitle = filePath;
-                        this.lastSuccessfulLanguage = trackElement.srclang;
-                        
-                        // Save state
-                        this.saveSubtitleState();
-                    }, 100);
-
+            const matchingTrack = trackElements.find(track => track.dataset.originalPath === filePath);
+            
+            if (matchingTrack) {
+                // Need to wait briefly for track to be ready
+                setTimeout(() => {
+                    this.disableAllTextTracks();
+                    matchingTrack.track.mode = 'showing';
+                    this.activeTrack = matchingTrack.track;
+                    
+                    // Update the last used language
+                    this.lastUsedLanguage = matchingTrack.srclang;
+                    this.globalSubtitleEnabled = true;
+                    this.lastSuccessfulSubtitle = filePath;
+                    this.lastSuccessfulLanguage = matchingTrack.srclang;
+                    
+                    // Save state
+                    this.saveSubtitleState();
+                    
                     // Store in subtitle history for this specific video
-                    this.subtitleHistory[this.currentVideoPath] = filePath;
-                    this.store.set('subtitleHistory', this.subtitleHistory);
-                    break;
-                }
+                    if (this.currentVideoPath) {
+                        this.subtitleHistory[this.currentVideoPath] = filePath;
+                        this.store.set('subtitleHistory', this.subtitleHistory);
+                    }
+                    
+                    this.updateSubtitleMenu();
+                }, 100);
             }
         } else {
             // Subtitle turned off
             this.globalSubtitleEnabled = false;
-            // Remove from subtitle history when explicitly turned off
-            delete this.subtitleHistory[this.currentVideoPath];
-            this.store.set('subtitleHistory', this.subtitleHistory);
-            // Don't reset lastUsedLanguage when turning off subtitles
+            if (this.currentVideoPath) {
+                delete this.subtitleHistory[this.currentVideoPath];
+                this.store.set('subtitleHistory', this.subtitleHistory);
+            }
+            this.lastSuccessfulSubtitle = null;
+            this.lastSuccessfulLanguage = null;
             this.saveSubtitleState();
+            this.updateSubtitleMenu();
         }
-
-        this.updateSubtitleMenu();
     }
 
     removeAllTracks() {
@@ -495,14 +478,16 @@ class SubtitlesManager {
     updateSubtitleMenu() {
         const trackList = document.querySelector('.subtitle-track-list');
         if (!trackList) return;
-
-        // Get currently active track's original path
-        const activeTrackPath = Array.from(this.mediaPlayer.getElementsByTagName('track'))
-            .find(track => track.track === this.activeTrack)?.dataset.originalPath;
-
-        // Create menu items with proper event handling
+    
+        const activeTrack = Array.from(this.mediaPlayer.textTracks).find(track => track.mode === 'showing');
+        const activeTrackPath = activeTrack ? 
+            Array.from(this.mediaPlayer.getElementsByTagName('track'))
+                .find(track => track.track === activeTrack)?.dataset.originalPath 
+            : null;
+    
+        // Create menu items
         trackList.innerHTML = `
-            <div class="subtitle-item ${!this.activeTrack ? 'active' : ''}" data-path="">
+            <div class="subtitle-item ${!activeTrackPath ? 'active' : ''}" data-path="">
                 Off
             </div>
             ${this.currentSubtitles.map(sub => `
@@ -512,13 +497,13 @@ class SubtitlesManager {
                 </div>
             `).join('')}
         `;
-
-        // Add click handlers using proper event delegation
+    
+        // Add click handlers
         trackList.querySelectorAll('.subtitle-item').forEach(item => {
-            item.addEventListener('click', (e) => {
+            item.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 const path = item.dataset.path;
-                this.setActiveSubtitle(path || null);
+                await this.setActiveSubtitle(path || null);
             });
         });
     }
