@@ -429,6 +429,33 @@
             font-size: 1em;
             line-height: 1.2;
         }
+
+        /* Audio Track */
+        .audio-menu {
+            background: rgba(28, 28, 28, 0.9);
+            border-radius: 4px;
+            padding: 8px;
+            min-width: 200px;
+            z-index: 1000;
+            bottom: 60px;
+            right: 10px;
+        }
+
+        .audio-item {
+            padding: 8px;
+            cursor: pointer;
+            color: white;
+            border-radius: 4px;
+        }
+
+        .audio-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .audio-item.active {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
     </style>
 </head>
 <body>

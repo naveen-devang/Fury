@@ -211,12 +211,12 @@ async function openFiles() {
 }
 
 async function addToPlaylist(filePath) {
-    // Add file immediately with basic info
+    // Get basic file info immediately
     const basicInfo = {
         path: filePath,
         metadata: {
             title: path.basename(filePath),
-            artist: 'Loading...',
+            artist: 'Unknown Artist',
             duration: 0
         }
     };
@@ -225,18 +225,32 @@ async function addToPlaylist(filePath) {
     playlist.push(basicInfo);
     updatePlaylistUI();
 
-    // Load metadata asynchronously
+    // Create temporary video element for quick metadata
+    const temp = document.createElement('video');
+    temp.preload = 'metadata';
+    
     try {
-        const metadata = await parseFile(filePath);
-        playlist[index].metadata = {
-            title: metadata.common.title || path.basename(filePath),
-            artist: metadata.common.artist || 'Unknown Artist',
-            duration: metadata.format.duration || 0
-        };
+        const metadataLoaded = new Promise((resolve, reject) => {
+            temp.onloadedmetadata = () => resolve(temp.duration);
+            temp.onerror = reject;
+            temp.src = filePath;
+        });
+
+        const duration = await metadataLoaded;
+        playlist[index].metadata.duration = duration;
         updatePlaylistUI();
+        temp.remove();
+        
+        // Optional: Load full metadata in background
+        parseFile(filePath).then(metadata => {
+            playlist[index].metadata.title = metadata.common.title || path.basename(filePath);
+            playlist[index].metadata.artist = metadata.common.artist || 'Unknown Artist';
+            updatePlaylistUI();
+        }).catch(() => {});
+        
     } catch (error) {
         console.error('Error loading metadata:', error);
-        // Keep basic info on error
+        temp.remove();
     }
 }
 
@@ -445,6 +459,24 @@ mediaPlayer.addEventListener('pause', () => {
 // Add event listener for media player play event
 mediaPlayer.addEventListener('play', () => {
     updatePlayPauseIcon(false);
+});
+
+mediaPlayer.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    
+    const volumeChange = e.deltaY > 0 ? -0.10 : 0.10;
+    const newVolume = Math.max(0, Math.min(1, mediaPlayer.volume + volumeChange));
+    
+    mediaPlayer.volume = newVolume;
+    volumeSlider.value = newVolume * 100;
+    lastVolume = newVolume;
+    
+    // Update volume icon
+    if (newVolume === 0) {
+        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+    } else {
+        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+    }
 });
 
 function updateTimeDisplay() {
