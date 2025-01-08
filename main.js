@@ -114,6 +114,17 @@ ipcMain.handle('open-files', async () => {
   return result.filePaths;
 });
 
+ipcMain.handle('open-subtitle-file', async () => {
+  return dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+          { name: 'Subtitle Files', 
+            extensions: ['srt', 'vtt', 'ass', 'ssa', 'sub'] 
+          }
+      ]
+  });
+});
+
  ipcMain.handle('check-for-updates', () => {
   autoUpdater.checkForUpdatesAndNotify();
 });

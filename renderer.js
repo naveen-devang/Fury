@@ -4,6 +4,8 @@ const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
 
+const SubtitlesManager = require('./subtitles');
+
 let playlist = [];
 let currentIndex = -1;
 let isLooping = false;
@@ -59,6 +61,8 @@ mediaPlayer.addEventListener('click', (e) => {
         toggleFullscreen();
     }
 });
+
+const subtitlesManager = window.subtitlesManager = new SubtitlesManager(mediaPlayer);
 
 // Clear the timeout if the user moves away or starts dragging
 mediaPlayer.addEventListener('mouseleave', () => {
@@ -394,8 +398,11 @@ function handleDrop(e) {
     store.set('playlist', playlist);
 }
 
-function playFile(filePath) {
+async function playFile(filePath) {
     mediaPlayer.src = filePath;
+    
+    // Detect and load subtitles for the new file
+    await subtitlesManager.detectSubtitles(filePath);
     
     mediaPlayer.play()
         .then(() => {
