@@ -532,11 +532,18 @@ function handleDrop(e) {
 }
 
 async function playFile(filePath) {
+    if (!filePath) {
+        console.warn('No file path provided to playFile');
+        return;
+    }
+
     mediaPlayer.src = filePath;
     
     // Detect and load subtitles for the new file
-    await subtitlesManager.detectSubtitles(filePath);
-    
+    subtitlesManager.detectSubtitles(filePath).catch(err => {
+        console.warn('Error loading subtitles:', err);
+    });
+
     const shouldRememberPlayback = store.get('rememberPlayback', true);
     const lastPosition = shouldRememberPlayback ? getLastPosition(filePath) : null;
 
@@ -863,19 +870,43 @@ function removeFromPlaylist(index) {
 }
 
 function clearPlaylist() {
+    // Stop any currently playing media
+    mediaPlayer.pause();
+    // Clear the source to prevent memory leaks
+    mediaPlayer.removeAttribute('src');
+    mediaPlayer.load();
+    
+    // Reset all player state
     playlist = [];
     currentIndex = -1;
-    mediaPlayer.src = '';
+    
+    // Update UI elements
     updatePlaylistUI();
     updateWindowTitle();
+    updatePlayPauseIcon(true);
+    
+    // Clear the time display and slider
+    timeDisplay.textContent = '00:00 / 00:00';
+    timeSlider.value = 0;
+    
+    // Save empty playlist to store
     store.set('playlist', playlist);
 }
 
 function handleMediaEnd() {
+    // Remove last position when media ends normally
+    if (currentIndex !== -1 && playlist[currentIndex]) {
+        removeLastPosition(playlist[currentIndex].path);
+    }
+    
     if (isLooping) {
         mediaPlayer.play();
-    } else if (currentIndex < playlist.length - 1) {
+    } else if (playlist.length > 0 && currentIndex < playlist.length - 1) {
         playNext();
+    } else {
+        // If we're at the end of the playlist, reset the player
+        mediaPlayer.pause();
+        updatePlayPauseIcon(true);
     }
 }
 
@@ -892,12 +923,19 @@ function formatTime(seconds) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+const clearPlaylistBtn = document.getElementById('clear-playlist');
+
+clearPlaylistBtn.addEventListener('click', () => {
+    if (playlist.length > 0) {
+        clearPlaylist();
+    }
+});
+
 // IPC Events
 ipcRenderer.on('change-theme', (_, themeName) => {
     applyTheme(themeName);
 });
 ipcRenderer.on('menu-open-files', openFiles);
-ipcRenderer.on('menu-clear-playlist', clearPlaylist);
 ipcRenderer.on('menu-play-pause', togglePlayPause);
 ipcRenderer.on('menu-previous', playPrevious);
 ipcRenderer.on('menu-next', playNext);
@@ -949,11 +987,17 @@ document.addEventListener('drop', async (e) => {
 
 // Error handling
 mediaPlayer.addEventListener('error', (e) => {
-    console.error('Media Player Error:', e);
-    alert(`Error playing media: ${mediaPlayer.error?.message || 'Unknown error'}`);
-    playNext();
+    // Only show error if there's actually a source attribute
+    if (mediaPlayer.hasAttribute('src')) {
+        console.error('Media Player Error:', e);
+        alert(`Error playing media: ${mediaPlayer.error?.message || 'Unknown error'}`);
+        
+        // Only try to play next if we have items in the playlist
+        if (playlist.length > 0) {
+            playNext();
+        }
+    }
 });
-
 // Save playlist before window closes
 window.addEventListener('beforeunload', () => {
     store.set('playlist', playlist);
