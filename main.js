@@ -5,6 +5,7 @@ const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const createMenuTemplate = require('./menu-template');
+const RELEASE_NOTES = require('./release-notes');
 const store = new Store();
 
 app.commandLine.appendSwitch('force_high_performance_gpu');
@@ -19,6 +20,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
       width: 1200,
       height: 800,
+      minWidth: 800, 
+      minHeight: 600, 
       webPreferences: {
           nodeIntegration: true,
           contextIsolation: false
@@ -56,27 +59,36 @@ autoUpdater.on('checking-for-update', () => {
 });
 
 autoUpdater.on('update-available', (info) => {
-  const releaseNotes = info.releaseNotes || 'No release notes available';
-  const formattedNotes = typeof releaseNotes === 'string' ? 
-    releaseNotes : 
-    releaseNotes.reduce((acc, note) => acc + `${note.version}\n${note.note}\n\n`, '');
+  // Get release notes from your local file
+  const version = info.version;
+  let releaseNotes = 'No release notes available';
+  
+  if (RELEASE_NOTES[version]) {
+    releaseNotes = RELEASE_NOTES[version].join('\n• ');
+    releaseNotes = '• ' + releaseNotes;
+  } else {
+    // Fallback to info.releaseNotes if available
+    if (info.releaseNotes) {
+      releaseNotes = typeof info.releaseNotes === 'string' ? 
+        info.releaseNotes : 
+        info.releaseNotes.reduce((acc, note) => acc + `${note.version}\n${note.note}\n\n`, '');
+    }
+  }
 
   dialog.showMessageBox(mainWindow, {
     type: 'info',
     title: 'Update Available',
-    message: `Version ${info.version} is available.`,
-    detail: `Release Notes:\n${formattedNotes}\n\nWould you like to download it now?`,
-    buttons: ['Yes', 'No']
+    message: `Version ${version} is available.`,
+    detail: `Release Notes:\n${releaseNotes}\n\nWould you like to download it now?`,
+    buttons: ['Yes', 'No'],
+    cancelId: 1,  // 'No' button is treated as cancel
+    defaultId: 1  // 'No' button is the default
   }).then((result) => {
-    if (result.response === 0) {
+    if (result.response === 0) {  // Only download if 'Yes' is clicked
       autoUpdater.downloadUpdate();
       mainWindow.webContents.send('update-message', 'Downloading update...');
     }
   });
-});
-
-autoUpdater.on('update-not-available', () => {
-  mainWindow.webContents.send('update-message', 'You are using the latest version.');
 });
 
 autoUpdater.on('download-progress', (progressObj) => {
@@ -85,18 +97,31 @@ autoUpdater.on('download-progress', (progressObj) => {
 
 autoUpdater.on('update-downloaded', () => {
   dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      title: 'Update Ready',
-      message: 'Update downloaded. The application will restart to install the update.',
-      buttons: ['Restart']
-  }).then(() => {
-      autoUpdater.quitAndInstall();
+    type: 'info',
+    title: 'Update Ready',
+    message: 'Update downloaded. Would you like to install it now? The application will restart.',
+    detail: 'If you choose "No", the update will be installed the next time you restart the application.',
+    buttons: ['Yes', 'No'],
+    cancelId: 1,
+    defaultId: 1
+  }).then((result) => {
+    if (result.response === 0) {  // Only install if 'Yes' is clicked
+      autoUpdater.quitAndInstall(false, true);
+    }
   });
+});
+
+autoUpdater.on('update-not-available', () => {
+  mainWindow.webContents.send('update-message', 'You are using the latest version.');
 });
 
 autoUpdater.on('error', (err) => {
   mainWindow.webContents.send('update-error', err.message);
   log.error('Update error:', err);
+});
+
+ipcMain.on('enforce-min-size', (_, dimensions) => {
+  mainWindow.setMinimumSize(dimensions.width, dimensions.height);
 });
 
 ipcMain.handle('open-files', async () => {

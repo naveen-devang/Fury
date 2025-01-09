@@ -3,6 +3,7 @@ const { parseFile } = require('music-metadata');
 const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
+const { applyTheme, getCurrentTheme } = require('./themes');
 
 const SubtitlesManager = require('./subtitles');
 
@@ -17,6 +18,21 @@ const doubleClickDelay = 300; // milliseconds
 let controlsTimeout;
 let isFullscreen = false;
 const INACTIVITY_TIMEOUT = 3000; // 3 seconds
+const LAST_POSITIONS_KEY = 'lastPositions';
+const MAX_STORED_POSITIONS = 1000; // Limit number of stored positions to prevent excessive storage
+const MINIMUM_DURATION = 60; // Only store position for media longer than 1 minute
+const MINIMUM_POSITION = 30; // Only store position if user watched more than 30 seconds
+
+const rememberPlayback = store.get('rememberPlayback', true); // Default to true for existing users
+
+// Add minimum window size handling
+const MIN_WINDOW_WIDTH = 780;
+const MIN_WINDOW_HEIGHT = 580;
+
+
+document.addEventListener('DOMContentLoaded', () => {
+    applyTheme(getCurrentTheme());
+});
 
 // DOM Elements
 const mediaPlayer = document.getElementById('media-player');
@@ -37,6 +53,67 @@ const playlistElement = document.getElementById('playlist');
 let lastVolume = 0.5; // 50%
 mediaPlayer.volume = 0.5;
 volumeSlider.value = 50; // Set slider to 50%
+
+const playerSection = document.querySelector('.player-section');
+const playlistPanel = document.getElementById('playlist-panel');
+const appContainer = document.querySelector('.app-container');
+
+
+window.addEventListener('resize', () => {
+    const width = Math.max(window.innerWidth, MIN_WINDOW_WIDTH);
+    const height = Math.max(window.innerHeight, MIN_WINDOW_HEIGHT);
+    
+    // Enforce minimum width through CSS
+    appContainer.style.minWidth = `${MIN_WINDOW_WIDTH}px`;
+    playerSection.style.minWidth = `${MIN_WINDOW_WIDTH - 320}px`; // 320px is playlist panel width
+    
+    if (width < MIN_WINDOW_WIDTH || height < MIN_WINDOW_HEIGHT) {
+        ipcRenderer.send('enforce-min-size', {
+            width: width,
+            height: height
+        });
+    }
+});
+
+function adjustForScreenSize() {
+    const width = Math.max(window.innerWidth, MIN_WINDOW_WIDTH);
+    
+    if (width < 900) {
+        // Adjust playlist panel
+        playlistPanel.style.width = '280px';
+        playerSection.style.minWidth = `${MIN_WINDOW_WIDTH - 280}px`; // Account for smaller playlist panel
+        
+        // Ensure controls stay visible
+        document.querySelectorAll('.control-button').forEach(button => {
+            button.style.padding = '6px';
+        });
+        
+        // Adjust volume slider
+        const volumeControl = document.querySelector('.volume-control');
+        if (volumeControl) {
+            volumeControl.style.minWidth = '80px';
+            volumeControl.style.width = '80px';
+        }
+    } else {
+        // Reset styles for larger screens
+        playlistPanel.style.width = '320px';
+        playerSection.style.minWidth = `${MIN_WINDOW_WIDTH - 320}px`;
+        
+        document.querySelectorAll('.control-button').forEach(button => {
+            button.style.padding = '8px';
+        });
+        
+        const volumeControl = document.querySelector('.volume-control');
+        if (volumeControl) {
+            volumeControl.style.minWidth = '100px';
+            volumeControl.style.width = '120px';
+        }
+    }
+}
+
+window.addEventListener('load', adjustForScreenSize);
+window.addEventListener('resize', adjustForScreenSize);
+
 
 // Add this event listener after other event listeners
 mediaPlayer.addEventListener('click', (e) => {
@@ -142,6 +219,48 @@ function toggleLoop() {
 
 function changePlaybackSpeed() {
     mediaPlayer.playbackRate = parseFloat(playbackSpeedSelect.value);
+}
+
+// Function to get stored positions
+function getStoredPositions() {
+    return store.get(LAST_POSITIONS_KEY, {});
+}
+
+// Function to save last position
+function saveLastPosition(filePath, position, duration) {
+    if (!filePath || !duration || duration < MINIMUM_DURATION || position < MINIMUM_POSITION) return;
+    
+    const positions = getStoredPositions();
+    
+    // Add new position
+    positions[filePath] = {
+        position: position,
+        timestamp: Date.now(),
+        duration: duration
+    };
+    
+    // Remove oldest entries if we exceed MAX_STORED_POSITIONS
+    const paths = Object.keys(positions);
+    if (paths.length > MAX_STORED_POSITIONS) {
+        const sortedPaths = paths.sort((a, b) => positions[b].timestamp - positions[a].timestamp);
+        const pathsToRemove = sortedPaths.slice(MAX_STORED_POSITIONS);
+        pathsToRemove.forEach(path => delete positions[path]);
+    }
+    
+    store.set(LAST_POSITIONS_KEY, positions);
+}
+
+// Function to get last position
+function getLastPosition(filePath) {
+    const positions = getStoredPositions();
+    return positions[filePath] || null;
+}
+
+// Function to remove last position
+function removeLastPosition(filePath) {
+    const positions = getStoredPositions();
+    delete positions[filePath];
+    store.set(LAST_POSITIONS_KEY, positions);
 }
 
 // Keyboard shortcuts
@@ -418,6 +537,92 @@ async function playFile(filePath) {
     // Detect and load subtitles for the new file
     await subtitlesManager.detectSubtitles(filePath);
     
+    const shouldRememberPlayback = store.get('rememberPlayback', true);
+    const lastPosition = shouldRememberPlayback ? getLastPosition(filePath) : null;
+
+    if (lastPosition) {
+        // Create resume dialog
+        const shouldResume = await new Promise(resolve => {
+            const dialog = document.createElement('div');
+            dialog.className = 'resume-dialog';
+            dialog.innerHTML = `
+                <div class="resume-content">
+                    <p>Resume from ${formatTime(lastPosition.position)}?</p>
+                    <div class="resume-buttons">
+                        <button class="resume-yes">Yes</button>
+                        <button class="resume-no">No</button>
+                    </div>
+                </div>
+            `;
+            
+            // Add dialog styles if not already in stylesheet
+            const style = document.createElement('style');
+            style.textContent = `
+                .resume-dialog {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    background: rgba(0, 0, 0, 0.9);
+                    padding: 20px;
+                    border-radius: 8px;
+                    z-index: 1000;
+                }
+                .resume-content {
+                    color: white;
+                    text-align: center;
+                }
+                .resume-buttons {
+                    display: flex;
+                    gap: 10px;
+                    justify-content: center;
+                    margin-top: 10px;
+                }
+                .resume-buttons button {
+                    padding: 5px 15px;
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    border-radius: 4px;
+                    cursor: pointer;
+                    background: rgba(255, 255, 255, 0.03);
+                    color: white;
+                }
+                .resume-buttons button:hover {
+                    background: rgba(255, 255, 255, 0.06);
+                    border: 1px solid var(--primary-color);
+                }
+            `;
+            document.head.appendChild(style);
+            
+            document.getElementById('player-container').appendChild(dialog);
+            
+            // Handle user choice
+            dialog.querySelector('.resume-yes').onclick = () => {
+                dialog.remove();
+                resolve(true);
+            };
+            dialog.querySelector('.resume-no').onclick = () => {
+                dialog.remove();
+                resolve(false);
+            };
+            
+            // Auto-hide dialog after 10 seconds and start from beginning
+            setTimeout(() => {
+                if (dialog.parentNode) {
+                    dialog.remove();
+                    resolve(false);
+                }
+            }, 10000);
+        });
+        
+        if (shouldResume) {
+            mediaPlayer.currentTime = lastPosition.position;
+        } else {
+            mediaPlayer.currentTime = 0;
+        } 
+    } else {
+        mediaPlayer.currentTime = 0;
+    }
+    
     mediaPlayer.play()
         .then(() => {
             updatePlayPauseIcon(false);
@@ -429,6 +634,7 @@ async function playFile(filePath) {
     updatePlaylistUI();
     updateWindowTitle();
 }
+
 
 function updatePlayPauseIcon(isPaused) {
     playPauseBtn.innerHTML = isPaused 
@@ -450,6 +656,51 @@ function togglePlayPause() {
         updatePlayPauseIcon(true);
     }
 }
+
+let savePositionInterval;
+mediaPlayer.addEventListener('play', () => {
+    // Save position every 5 seconds while playing
+    savePositionInterval = setInterval(() => {
+        if (currentIndex !== -1 && playlist[currentIndex]) {
+            saveLastPosition(
+                playlist[currentIndex].path,
+                mediaPlayer.currentTime,
+                mediaPlayer.duration
+            );
+        }
+    }, 5000);
+});
+
+mediaPlayer.addEventListener('pause', () => {
+    clearInterval(savePositionInterval);
+    // Save position immediately when paused
+    if (currentIndex !== -1 && playlist[currentIndex]) {
+        saveLastPosition(
+            playlist[currentIndex].path,
+            mediaPlayer.currentTime,
+            mediaPlayer.duration
+        );
+    }
+});
+
+// Save position before window closes
+window.addEventListener('beforeunload', () => {
+    if (currentIndex !== -1 && playlist[currentIndex]) {
+        saveLastPosition(
+            playlist[currentIndex].path,
+            mediaPlayer.currentTime,
+            mediaPlayer.duration
+        );
+    }
+    store.set('playlist', playlist);
+});
+
+// Clear last position when media ends normally
+mediaPlayer.addEventListener('ended', () => {
+    if (currentIndex !== -1 && playlist[currentIndex]) {
+        removeLastPosition(playlist[currentIndex].path);
+    }
+});
 
 // Add event listener for media player pause event
 mediaPlayer.addEventListener('pause', () => {
@@ -642,12 +893,19 @@ function formatTime(seconds) {
 }
 
 // IPC Events
+ipcRenderer.on('change-theme', (_, themeName) => {
+    applyTheme(themeName);
+});
 ipcRenderer.on('menu-open-files', openFiles);
 ipcRenderer.on('menu-clear-playlist', clearPlaylist);
 ipcRenderer.on('menu-play-pause', togglePlayPause);
 ipcRenderer.on('menu-previous', playPrevious);
 ipcRenderer.on('menu-next', playNext);
 ipcRenderer.on('menu-fullscreen', toggleFullscreen);
+
+ipcRenderer.on('toggle-remember-playback', (_, enabled) => {
+    store.set('rememberPlayback', enabled);
+});
 
 // Drag and drop support
 document.addEventListener('dragover', (e) => {

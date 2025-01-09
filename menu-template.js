@@ -1,4 +1,10 @@
 const { app, dialog } = require('electron');
+const { getCurrentTheme } = require('./themes');
+const RELEASE_NOTES = require('./release-notes');
+const { autoUpdater } = require('electron-updater');
+const Store = require('electron-store');
+const store = new Store();
+
 
 const createMenuTemplate = (mainWindow) => [
     {
@@ -19,6 +25,70 @@ const createMenuTemplate = (mainWindow) => [
                 label: 'Exit',
                 accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Alt+F4',
                 click: () => app.quit()
+            }
+        ]
+    },
+    {
+        label: 'View',
+        submenu: [
+            {
+                label: 'Themes',
+                submenu: [
+                    {
+                        label: 'Default',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'default',
+                        click: () => mainWindow.webContents.send('change-theme', 'default')
+                    },
+                    {
+                        label: 'Cosmos',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'cosmos',
+                        click: () => mainWindow.webContents.send('change-theme', 'cosmos')
+                    },
+                    {
+                        label: 'Blood Moon',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'bloodMoon',
+                        click: () => mainWindow.webContents.send('change-theme', 'bloodMoon')
+                    },
+                    {
+                        label: 'Crystal Wave',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'crystalWave',
+                        click: () => mainWindow.webContents.send('change-theme', 'crystalWave')
+                    },
+                    {
+                        label: 'Solar Flare',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'solarFlare',
+                        click: () => mainWindow.webContents.send('change-theme', 'solarFlare')
+                    },
+                    {
+                        label: 'Aurora Breeze',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'auroraBreeze',
+                        click: () => mainWindow.webContents.send('change-theme', 'auroraBreeze')
+                    },
+                    {
+                        label: 'Neon Dreams',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'neonDreams',
+                        click: () => mainWindow.webContents.send('change-theme', 'neonDreams')
+                    },
+                    {
+                        label: 'Emerald Forest',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'emeraldForest',
+                        click: () => mainWindow.webContents.send('change-theme', 'emeraldForest')
+                    },
+                    {
+                        label: 'Crimson Night',
+                        type: 'radio',
+                        checked: getCurrentTheme() === 'crimsonNight',
+                        click: () => mainWindow.webContents.send('change-theme', 'crimsonNight')
+                    }
+                ]
             }
         ]
     },
@@ -51,6 +121,76 @@ const createMenuTemplate = (mainWindow) => [
     {
         label: 'Help',
         submenu: [
+            {
+                label: 'Remember Playback Position',
+                type: 'checkbox',
+                checked: store.get('rememberPlayback', true), // Default to true for existing users
+                click: (menuItem) => {
+                    store.set('rememberPlayback', menuItem.checked);
+                    mainWindow.webContents.send('toggle-remember-playback', menuItem.checked);
+                }
+            },
+            {
+                label: 'Release Notes',
+                click: async () => {
+                    const currentVersion = app.getVersion();
+                    let message = `Current Version: ${currentVersion}\n\nCurrent Release Notes:\n`;
+                    
+                    // Add current version's release notes
+                    if (RELEASE_NOTES[currentVersion]) {
+                        message += '• ' + RELEASE_NOTES[currentVersion].join('\n• ') + '\n\n';
+                    } else {
+                        message += 'No release notes available for current version.\n\n';
+                    }
+                    
+                    // Check for updates and add new version's release notes if available
+                    try {
+                        const updateCheckResult = await autoUpdater.checkForUpdates();
+                        if (updateCheckResult && updateCheckResult.updateInfo) {
+                            const newVersion = updateCheckResult.updateInfo.version;
+                            if (newVersion !== currentVersion) {
+                                message += `New Version Available: ${newVersion}\n\nNew Release Notes:\n`;
+                                if (RELEASE_NOTES[newVersion]) {
+                                    message += '• ' + RELEASE_NOTES[newVersion].join('\n• ') + '\n\n';
+                                } else if (updateCheckResult.updateInfo.releaseNotes) {
+                                    message += updateCheckResult.updateInfo.releaseNotes + '\n\n';
+                                } else {
+                                    message += 'No release notes available for new version.\n\n';
+                                }
+                                
+                                // Show dialog with update option
+                                dialog.showMessageBox(mainWindow, {
+                                    title: 'Release Notes',
+                                    message: message,
+                                    buttons: ['Update Now', 'Later'],
+                                    defaultId: 1,
+                                    cancelId: 1,
+                                    detail: 'Would you like to update to the new version?'
+                                }).then(result => {
+                                    if (result.response === 0) {
+                                        autoUpdater.downloadUpdate();
+                                        mainWindow.webContents.send('update-message', 'Downloading update...');
+                                    }
+                                });
+                            } else {
+                                // Show dialog without update option if no new version
+                                dialog.showMessageBox(mainWindow, {
+                                    title: 'Release Notes',
+                                    message: message,
+                                    buttons: ['OK']
+                                });
+                            }
+                        }
+                    } catch (error) {
+                        // Show current release notes if update check fails
+                        dialog.showMessageBox(mainWindow, {
+                            title: 'Release Notes',
+                            message: message,
+                            buttons: ['OK']
+                        });
+                    }
+                }
+            },
             {
                 label: 'Keyboard Shortcuts',
                 click: () => {
