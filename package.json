@@ -1,6 +1,6 @@
 {
   "name": "fury",
-  "version": "0.0.22",
+  "version": "0.0.23",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
@@ -15,6 +15,7 @@
     "url": "https://github.com/naveen-devang/Fury.git"
   },
   "dependencies": {
+    "electron-is-packaged": "^1.0.2",
     "electron-log": "^5.0.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.1.7",
@@ -36,20 +37,21 @@
     "appId": "com.fury.mediaplayer",
     "productName": "Fury",
     "asar": true,
-    "asarUnpack": [
-      "node_modules/ffmpeg-static/**/*",
-      "node_modules/ffprobe-static/**/*"
-    ],
     "extraResources": [
       {
-        "from": "node_modules/ffmpeg-static",
-        "to": "ffmpeg",
-        "filter": ["**/*"]
+        "from": "node_modules/ffmpeg-static/bin/win32/x64/ffmpeg.exe",
+        "to": "ffmpeg/ffmpeg.exe"
+      },
+      {
+          "from": "node_modules/ffprobe-static/bin/win32/x64/ffprobe.exe", 
+          "to": "ffmpeg/ffprobe.exe"
       },
       {
         "from": "node_modules/ffprobe-static/bin",
         "to": "ffmpeg",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "directories": {

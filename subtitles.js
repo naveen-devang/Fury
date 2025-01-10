@@ -1,23 +1,19 @@
+const ffmpeg = require('./ffmpeg-setup'); // Require the singleton instance
+
+
 const { ipcRenderer } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const srt2vtt = require('srt-to-vtt');
 const { createReadStream } = require('fs');
 const Store = new require('electron-store');
-const ffmpeg = require('fluent-ffmpeg');
 const ffmpegPath = require('ffmpeg-static');
 const ffprobePath = require('ffprobe-static');
 const store = new Store();
 const os = require('os');
 const { promisify } = require('util');
-const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
 
-const ffmpegPath = path.join(__dirname, '..', 'resources', 'ffmpeg', 'ffmpeg.exe'); // Windows example
-const ffprobePath = path.join(__dirname, '..', 'resources', 'ffmpeg', 'ffprobe.exe'); // Windows example
-
-ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobePath.path);
 
 class SubtitlesManager {
     constructor(mediaPlayer) {
@@ -197,6 +193,7 @@ class SubtitlesManager {
             }
         });
 
+        this.ffmpegAvailable = false;
         this.initializeFFmpeg();
     }
 
@@ -458,19 +455,19 @@ class SubtitlesManager {
             }
 
             this.log('Initializing FFmpeg...');
-            const ffmpegExists = await this.checkFileExists(ffmpegPath);
-            const ffprobeExists = await this.checkFileExists(ffprobePath.path);
 
-            if (!ffmpegExists || !ffprobeExists) {
-                throw new Error('FFmpeg binaries not found');
+            // Verify the paths exist
+            const fs = require('fs');
+            if (!fs.existsSync(ffmpeg.path)) {
+                throw new Error(`FFmpeg binary not found at: ${ffmpeg.path}`);
+            }
+            if (!fs.existsSync(ffmpeg.ffprobe.path)) {
+                throw new Error(`FFprobe binary not found at: ${ffmpeg.ffprobe.path}`);
             }
 
-            ffmpeg.setFfmpegPath(ffmpegPath);
-            ffmpeg.setFfprobePath(ffprobePath.path);
-            
             // Test FFmpeg
             await this.testFFmpeg();
-            
+
             this.ffmpegAvailable = true;
             this.log('FFmpeg initialized successfully');
         } catch (error) {
@@ -481,8 +478,7 @@ class SubtitlesManager {
 
     async testFFmpeg() {
         return new Promise((resolve, reject) => {
-            // Simple FFmpeg test command
-            ffmpeg.ffprobe(ffmpegPath, (err) => {
+            ffmpeg.ffprobe(ffmpeg.path, (err) => {
                 if (err) {
                     reject(err);
                 } else {
