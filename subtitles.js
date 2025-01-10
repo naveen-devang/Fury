@@ -29,12 +29,35 @@ class SubtitlesManager {
         this.subtitleCache = new Map();
         this.tempDir = path.join(os.tmpdir(), 'video-player-subtitles');
 
-        // Initialize FFmpeg with explicit error handling
+
         try {
+            let ffmpegPath, ffprobePath;
+
+            if (isDev) {
+                // In development, use the modules directly
+                ffmpegPath = require('ffmpeg-static');
+                ffprobePath = require('ffprobe-static').path;
+            } else {
+                // In production, get paths from electron's resource directory
+                const resourcePath = process.resourcesPath;
+                const platform = process.platform;
+                const ffmpegExt = platform === 'win32' ? '.exe' : '';
+                
+                ffmpegPath = path.join(resourcePath, 'ffmpeg', `ffmpeg${ffmpegExt}`);
+                ffprobePath = path.join(resourcePath, 'ffmpeg', `ffprobe${ffmpegExt}`);
+            }
+
+            this.log('Setting FFmpeg paths:', { ffmpegPath, ffprobePath });
             ffmpeg.setFfmpegPath(ffmpegPath);
-            ffmpeg.setFfprobePath(ffprobePath.path);
+            ffmpeg.setFfprobePath(ffprobePath);
+            this.ffmpegAvailable = this.checkFFmpegAvailability();
+            this.log('FFmpeg initialization result:', this.ffmpegAvailable);
         } catch (error) {
+            console.error('Error initializing FFmpeg:', error);
+            this.ffmpegAvailable = false;
         }
+
+        // Initialize FFmpeg with explicit error handling
 
         this.ffmpegAvailable = this.checkFFmpegAvailability();
 

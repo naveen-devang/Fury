@@ -15,8 +15,6 @@
     "url": "https://github.com/naveen-devang/Fury.git"
   },
   "dependencies": {
-    "@ffmpeg-installer/ffmpeg": "^1.1.0",
-    "@ffprobe-installer/ffprobe": "^2.1.2",
     "electron-log": "^5.0.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.1.7",
@@ -37,15 +35,20 @@
   "build": {
     "appId": "com.fury.mediaplayer",
     "productName": "Fury",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/ffprobe-static/**/*"
+    ],
     "extraResources": [
       {
-        "from": "node_modules/@ffmpeg-installer/ffmpeg/binaries",
-        "to": "ffmpeg-binaries",
+        "from": "node_modules/ffmpeg-static",
+        "to": "ffmpeg",
         "filter": ["**/*"]
       },
       {
-        "from": "node_modules/@ffprobe-installer/ffprobe/binaries",
-        "to": "ffprobe-binaries",
+        "from": "node_modules/ffprobe-static/bin",
+        "to": "ffmpeg",
         "filter": ["**/*"]
       }
     ],

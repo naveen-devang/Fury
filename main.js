@@ -15,6 +15,14 @@ if (isHardwareAccelerated) {
   app.commandLine.appendSwitch('enable-gpu-rasterization');
   app.commandLine.appendSwitch('enable-zero-copy');
 }
+
+
+const { getFFmpegPaths } = require('./ffmpeg-paths');
+const { ffmpegPath, ffprobePath } = getFFmpegPaths();
+
+global.ffmpegPath = ffmpegPath;
+global.ffprobePath = ffprobePath;
+
 // Configure logging
 log.transports.file.level = 'debug';
 autoUpdater.logger = log;
