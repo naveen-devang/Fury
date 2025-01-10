@@ -33,6 +33,18 @@
   "build": {
     "appId": "com.fury.mediaplayer",
     "productName": "Fury",
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/",
+        "to": "ffmpeg-static",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "node_modules/ffprobe-static/",
+        "to": "ffprobe-static",
+        "filter": ["**/*"]
+      }
+    ],
     "directories": {
       "output": "dist"
     },
