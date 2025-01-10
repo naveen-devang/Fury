@@ -7,9 +7,14 @@ const log = require('electron-log');
 const createMenuTemplate = require('./menu-template');
 const RELEASE_NOTES = require('./release-notes');
 const store = new Store();
+const isHardwareAccelerated = store.get('hardwareAcceleration', true);
 
-app.commandLine.appendSwitch('force_high_performance_gpu');
-
+if (isHardwareAccelerated) {
+  app.commandLine.appendSwitch('force_high_performance_gpu');
+  app.commandLine.appendSwitch('ignore-gpu-blacklist');
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('enable-zero-copy');
+}
 // Configure logging
 log.transports.file.level = 'debug';
 autoUpdater.logger = log;
@@ -24,7 +29,8 @@ function createWindow() {
       minHeight: 600, 
       webPreferences: {
           nodeIntegration: true,
-          contextIsolation: false
+          contextIsolation: false,
+          powerPreferences: 'high-performance'
       },
       autoHideMenuBar: false,
       frame: true
@@ -59,19 +65,18 @@ autoUpdater.on('checking-for-update', () => {
 });
 
 autoUpdater.on('update-available', (info) => {
-  // Get release notes from your local file
   const version = info.version;
   let releaseNotes = 'No release notes available';
-  
+
   if (RELEASE_NOTES[version]) {
-    releaseNotes = RELEASE_NOTES[version].join('\n• ');
-    releaseNotes = '• ' + releaseNotes;
-  } else {
-    // Fallback to info.releaseNotes if available
-    if (info.releaseNotes) {
-      releaseNotes = typeof info.releaseNotes === 'string' ? 
-        info.releaseNotes : 
-        info.releaseNotes.reduce((acc, note) => acc + `${note.version}\n${note.note}\n\n`, '');
+    releaseNotes = '• ' + RELEASE_NOTES[version].join('\n• ');
+  } else if (info.releaseNotes) {
+    if (typeof info.releaseNotes === 'string') {
+      releaseNotes = info.releaseNotes;
+    } else if (Array.isArray(info.releaseNotes)) {
+      releaseNotes = info.releaseNotes
+        .map((note) => `${note.version}\n${note.note}`)
+        .join('\n\n');
     }
   }
 
@@ -81,10 +86,10 @@ autoUpdater.on('update-available', (info) => {
     message: `Version ${version} is available.`,
     detail: `Release Notes:\n${releaseNotes}\n\nWould you like to download it now?`,
     buttons: ['Yes', 'No'],
-    cancelId: 1,  // 'No' button is treated as cancel
-    defaultId: 1  // 'No' button is the default
+    cancelId: 1,
+    defaultId: 0,
   }).then((result) => {
-    if (result.response === 0) {  // Only download if 'Yes' is clicked
+    if (result.response === 0) {
       autoUpdater.downloadUpdate();
       mainWindow.webContents.send('update-message', 'Downloading update...');
     }

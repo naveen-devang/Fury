@@ -29,6 +29,8 @@ const rememberPlayback = store.get('rememberPlayback', true); // Default to true
 const MIN_WINDOW_WIDTH = 780;
 const MIN_WINDOW_HEIGHT = 580;
 
+let isHardwareAccelerated = store.get('hardwareAcceleration', true); // Default to true
+
 
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme(getCurrentTheme());
@@ -154,6 +156,57 @@ mediaPlayer.addEventListener('mousedown', (e) => {
         e.preventDefault();
     }
 });
+
+function toggleHardwareAcceleration(enabled) {
+    isHardwareAccelerated = enabled;
+    store.set('hardwareAcceleration', enabled);
+    
+    if (mediaPlayer) {
+        if (enabled) {
+            // Enable hardware acceleration
+            mediaPlayer.style.transform = 'translateZ(0)';
+            mediaPlayer.style.willChange = 'transform';
+            mediaPlayer.classList.remove('no-hardware-acceleration');
+            
+            // Force video decoder hardware acceleration when available
+            mediaPlayer.setAttribute('x-webkit-airplay', 'allow');
+            mediaPlayer.setAttribute('webkit-playsinline', '');
+            mediaPlayer.setAttribute('playsinline', '');
+            
+            // Add hardware accelerated video rendering
+            mediaPlayer.style.backfaceVisibility = 'hidden';
+            mediaPlayer.style.perspective = '1000px';
+        } else {
+            // Disable hardware acceleration
+            mediaPlayer.style.transform = 'none';
+            mediaPlayer.style.willChange = 'auto';
+            mediaPlayer.classList.add('no-hardware-acceleration');
+            mediaPlayer.removeAttribute('x-webkit-airplay');
+            mediaPlayer.removeAttribute('webkit-playsinline');
+            mediaPlayer.removeAttribute('playsinline');
+            mediaPlayer.style.backfaceVisibility = 'visible';
+            mediaPlayer.style.perspective = 'none';
+        }
+        
+        // Reload current media to apply changes if something is playing
+        if (currentIndex !== -1 && playlist[currentIndex]) {
+            const currentTime = mediaPlayer.currentTime;
+            const wasPlaying = !mediaPlayer.paused;
+            const currentPath = playlist[currentIndex].path;
+            
+            mediaPlayer.removeAttribute('src');
+            mediaPlayer.load();
+            
+            mediaPlayer.src = currentPath;
+            mediaPlayer.currentTime = currentTime;
+            if (wasPlaying) {
+                mediaPlayer.play().catch(console.error);
+            }
+        }
+    }
+}
+
+
 
 // Load saved playlist
 const savedPlaylist = store.get('playlist', []);
@@ -537,6 +590,28 @@ async function playFile(filePath) {
         return;
     }
 
+    mediaPlayer.removeAttribute('src');
+    mediaPlayer.load();
+
+    if (isHardwareAccelerated) {
+        // Enable hardware acceleration hints
+        mediaPlayer.style.transform = 'translateZ(0)';
+        mediaPlayer.style.willChange = 'transform';
+        
+        // Enable hardware decoding
+        mediaPlayer.setAttribute('x-webkit-airplay', 'allow');
+        mediaPlayer.setAttribute('webkit-playsinline', '');
+        mediaPlayer.setAttribute('playsinline', '');
+
+        mediaPlayer.setAttribute('decode', 'async');
+        
+        // Add these hints for hardware-accelerated video rendering
+        if (mediaPlayer.canPlayType('video/mp4; codecs="avc1.42E01E"')) {
+            mediaPlayer.setAttribute('hardware', 'prefer-hardware');
+        }
+    }
+
+
     mediaPlayer.src = filePath;
     
     // Detect and load subtitles for the new file
@@ -629,15 +704,45 @@ async function playFile(filePath) {
     } else {
         mediaPlayer.currentTime = 0;
     }
+
+    const playPromise = new Promise((resolve, reject) => {
+        const onPlaying = () => {
+            if (isHardwareAccelerated) {
+                // Check if video is actually playing with hardware acceleration
+                if (mediaPlayer.videoTracks && mediaPlayer.videoTracks.length > 0) {
+                    const videoTrack = mediaPlayer.videoTracks[0];
+                    if (!videoTrack.selected) {
+                        console.warn('Hardware decoding might not be active');
+                    }
+                }
+            }
+            mediaPlayer.removeEventListener('playing', onPlaying);
+            resolve();
+        };
+        
+        const onError = (error) => {
+            mediaPlayer.removeEventListener('playing', onPlaying);
+            reject(error);
+        };
+        
+        mediaPlayer.addEventListener('playing', onPlaying, { once: true });
+        mediaPlayer.addEventListener('error', onError, { once: true });
+    });
+
     
-    mediaPlayer.play()
-        .then(() => {
-            updatePlayPauseIcon(false);
-        })
-        .catch(error => {
-            console.error('Error playing file:', error);
-            alert('Error playing file. The file may be invalid or unsupported.');
-        });
+    try {
+        await mediaPlayer.play();
+        await playPromise;
+        updatePlayPauseIcon(false);
+    } catch (error) {
+        console.error('Error playing file:', error);
+        if (isHardwareAccelerated && (error.name === 'NotSupportedError' || error.name === 'AbortError')) {
+            console.warn('Hardware decoding failed, falling back to software decoding');
+            toggleHardwareAcceleration(false);
+            return playFile(filePath); // Retry with hardware acceleration disabled
+        }
+        alert('Error playing file. The file may be invalid or unsupported.');
+    }
     updatePlaylistUI();
     updateWindowTitle();
 }
@@ -931,6 +1036,25 @@ clearPlaylistBtn.addEventListener('click', () => {
     }
 });
 
+function checkHardwareAccelerationSupport() {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    
+    if (!gl) {
+        console.warn('WebGL not supported - hardware acceleration may be limited');
+        return false;
+    }
+
+    // Check for video texture support
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (debugInfo) {
+        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+        console.log('Graphics hardware:', renderer);
+    }
+
+    return true;
+}
+
 // IPC Events
 ipcRenderer.on('change-theme', (_, themeName) => {
     applyTheme(themeName);
@@ -943,6 +1067,29 @@ ipcRenderer.on('menu-fullscreen', toggleFullscreen);
 
 ipcRenderer.on('toggle-remember-playback', (_, enabled) => {
     store.set('rememberPlayback', enabled);
+});
+
+ipcRenderer.on('toggle-hardware-acceleration', (_, enabled) => {
+    toggleHardwareAcceleration(enabled);
+    store.set('hardwareAcceleration', enabled);
+});
+
+// Initialize hardware acceleration state when player loads
+document.addEventListener('DOMContentLoaded', async () => {
+    // Check hardware support
+    const hasHardwareSupport = checkHardwareAccelerationSupport();
+    
+    // If no hardware support, force disable regardless of stored setting
+    if (!hasHardwareSupport) {
+        isHardwareAccelerated = false;
+        store.set('hardwareAcceleration', false);
+    } else {
+        // Load saved setting from store
+        isHardwareAccelerated = store.get('hardwareAcceleration', true);
+    }
+    
+    // Initialize hardware acceleration state
+    toggleHardwareAcceleration(isHardwareAccelerated);
 });
 
 // Drag and drop support
@@ -998,6 +1145,24 @@ mediaPlayer.addEventListener('error', (e) => {
         }
     }
 });
+
+mediaPlayer.addEventListener('error', (e) => {
+    if (e.target.error && isHardwareAccelerated) {
+        const errorCode = e.target.error.code;
+        // Check for common hardware acceleration related errors
+        if (errorCode === MediaError.MEDIA_ERR_DECODE || 
+            errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+            console.warn('Possible hardware acceleration error, falling back to software decoding');
+            toggleHardwareAcceleration(false);
+            
+            // Retry playback if we have a current file
+            if (currentIndex !== -1 && playlist[currentIndex]) {
+                playFile(playlist[currentIndex].path);
+            }
+        }
+    }
+});
+
 // Save playlist before window closes
 window.addEventListener('beforeunload', () => {
     store.set('playlist', playlist);

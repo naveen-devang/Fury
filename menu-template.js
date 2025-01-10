@@ -4,6 +4,7 @@ const RELEASE_NOTES = require('./release-notes');
 const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store');
 const store = new Store();
+const { BrowserWindow } = require('electron');
 
 
 const createMenuTemplate = (mainWindow) => [
@@ -89,7 +90,7 @@ const createMenuTemplate = (mainWindow) => [
                         click: () => mainWindow.webContents.send('change-theme', 'crimsonNight')
                     }
                 ]
-            }
+            },
         ]
     },
     {
@@ -128,6 +129,35 @@ const createMenuTemplate = (mainWindow) => [
                 click: (menuItem) => {
                     store.set('rememberPlayback', menuItem.checked);
                     mainWindow.webContents.send('toggle-remember-playback', menuItem.checked);
+                }
+            },
+            {
+                label: 'Hardware Acceleration',
+                type: 'checkbox',
+                checked: store.get('hardwareAcceleration', true),
+                click: (menuItem) => {
+                    store.set('hardwareAcceleration', menuItem.checked);
+                    
+                    // Show dialog informing user about restart requirement
+                    dialog.showMessageBox({
+                        type: 'info',
+                        title: 'Restart Required',
+                        message: 'Hardware acceleration changes will take effect after restarting the application.',
+                        buttons: ['Restart Now', 'Later'],
+                        defaultId: 0,
+                        cancelId: 1
+                    }).then(result => {
+                        if (result.response === 0) {
+                            // Restart the app
+                            app.relaunch();
+                            app.exit();
+                        }
+                    });
+            
+                    // Still send the event to update UI elements if needed
+                    BrowserWindow.getAllWindows().forEach(win => {
+                        win.webContents.send('toggle-hardware-acceleration', menuItem.checked);
+                    });
                 }
             },
             {
