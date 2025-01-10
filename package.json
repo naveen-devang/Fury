@@ -1,6 +1,6 @@
 {
   "name": "fury",
-  "version": "0.0.21",
+  "version": "0.0.22",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {

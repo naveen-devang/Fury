@@ -13,6 +13,9 @@ const { promisify } = require('util');
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
 
+const ffmpegPath = path.join(__dirname, '..', 'resources', 'ffmpeg', 'ffmpeg.exe'); // Windows example
+const ffprobePath = path.join(__dirname, '..', 'resources', 'ffmpeg', 'ffprobe.exe'); // Windows example
+
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath.path);
 
