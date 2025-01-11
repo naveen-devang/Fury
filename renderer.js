@@ -50,6 +50,7 @@ const shuffleBtn = document.getElementById('shuffle');
 const loopBtn = document.getElementById('loop');
 const playbackSpeedSelect = document.getElementById('playback-speed');
 const playlistElement = document.getElementById('playlist');
+let isDragging = false;
 
 // Initialize player state
 let lastVolume = 0.5; // 50%
@@ -60,8 +61,11 @@ const playerSection = document.querySelector('.player-section');
 const playlistPanel = document.getElementById('playlist-panel');
 const appContainer = document.querySelector('.app-container');
 
+const timePreview = document.createElement('div');
+timePreview.className = 'time-preview';
+timeSlider.parentElement.appendChild(timePreview);
 
-window.addEventListener('resize', () => {
+window.addEventListener('resize', () => {1
     const width = Math.max(window.innerWidth, MIN_WINDOW_WIDTH);
     const height = Math.max(window.innerHeight, MIN_WINDOW_HEIGHT);
     
@@ -207,12 +211,16 @@ function toggleHardwareAcceleration(enabled) {
 }
 
 
-
 // Load saved playlist
 const savedPlaylist = store.get('playlist', []);
 if (savedPlaylist.length > 0) {
     playlist = savedPlaylist;
     updatePlaylistUI();
+}
+
+function updateSliderProgress() {
+    const progress = (mediaPlayer.currentTime / mediaPlayer.duration) * 100;
+    timeSlider.style.setProperty('--progress-percent', progress);
 }
 
 function showControls() {
@@ -244,19 +252,89 @@ shuffleBtn.addEventListener('click', toggleShuffle);
 loopBtn.addEventListener('click', toggleLoop);
 playbackSpeedSelect.addEventListener('change', changePlaybackSpeed);
 volumeSlider.addEventListener('input', updateVolume);
-timeSlider.addEventListener('input', seekMedia);
-
+timeSlider.addEventListener('input', () => {
+    const time = parseFloat(timeSlider.value);
+    if (!isNaN(time)) {
+        mediaPlayer.currentTime = time;
+        updateSliderProgress();
+    }
+});
 // Set initial button states
 loopBtn.style.opacity = isLooping ? '1' : '0.5';
 shuffleBtn.style.opacity = isShuffling ? '1' : '0.5';
 
 // Media player events
-mediaPlayer.addEventListener('timeupdate', updateTimeDisplay);
+mediaPlayer.addEventListener('timeupdate', () => {
+    if (!isDragging) {
+        updateTimeDisplay();
+    }
+});
 mediaPlayer.addEventListener('ended', handleMediaEnd);
 mediaPlayer.addEventListener('loadedmetadata', () => {
     timeSlider.max = mediaPlayer.duration;
     updateTimeDisplay();
 });
+
+timeSlider.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    createRippleEffect(e);
+    document.body.style.cursor = 'grabbing';
+});
+
+document.addEventListener('mouseup', () => {
+    if (isDragging) {
+        isDragging = false;
+        document.body.style.cursor = '';
+    }
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (isDragging) {
+        const rect = timeSlider.getBoundingClientRect();
+        const pos = (e.clientX - rect.left) / rect.width;
+        const time = pos * mediaPlayer.duration;
+        if (!isNaN(time)) {
+            mediaPlayer.currentTime = time;
+            updateTimeDisplay();
+            updateSliderProgress();
+        }
+    }
+});
+
+// Preview time on hover
+timeSlider.addEventListener('mousemove', (e) => {
+    const rect = timeSlider.getBoundingClientRect();
+    const pos = (e.clientX - rect.left) / rect.width;
+    const previewTime = pos * mediaPlayer.duration;
+    
+    if (!isNaN(previewTime)) {
+        timePreview.textContent = formatTime(previewTime);
+        timePreview.style.left = `${e.clientX}px`;
+        timePreview.classList.add('visible');
+    }
+});
+
+timeSlider.addEventListener('mouseleave', () => {
+    timePreview.classList.remove('visible');
+});
+
+// Create ripple effect
+function createRippleEffect(e) {
+    const ripple = document.createElement('div');
+    ripple.className = 'slider-ripple';
+    
+    const rect = timeSlider.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    ripple.style.width = ripple.style.height = `${size}px`;
+    
+    ripple.style.left = `${e.clientX - rect.left - size/2}px`;
+    ripple.style.top = `${e.clientY - rect.top - size/2}px`;
+    
+    timeSlider.appendChild(ripple);
+    
+    ripple.style.animation = 'ripple 0.6s linear';
+    ripple.addEventListener('animationend', () => ripple.remove());
+}
 
 
 function toggleShuffle() {
@@ -844,11 +922,12 @@ mediaPlayer.addEventListener('wheel', (e) => {
 
 function updateTimeDisplay() {
     if (!isNaN(mediaPlayer.duration)) {
+        timeSlider.max = mediaPlayer.duration;
         timeSlider.value = mediaPlayer.currentTime;
         timeDisplay.textContent = `${formatTime(mediaPlayer.currentTime)} / ${formatTime(mediaPlayer.duration)}`;
+        updateSliderProgress();
     }
 }
-
 function seekMedia() {
     const time = parseFloat(timeSlider.value);
     if (!isNaN(time)) {
@@ -1023,9 +1102,16 @@ function updateWindowTitle() {
 
 function formatTime(seconds) {
     if (!seconds || isNaN(seconds)) return '00:00';
-    const mins = Math.floor(seconds / 60);
+    
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    
+    if (hours > 0) {
+        return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    } else {
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
 }
 
 const clearPlaylistBtn = document.getElementById('clear-playlist');

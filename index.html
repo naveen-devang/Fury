@@ -69,9 +69,35 @@
         }
 
         #playback-speed {
-            min-width: 70px;
-            max-width: 70px;
+            background: none;
+            border: none;
+            color: var(--text-color);
+            padding: 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+            -webkit-appearance: none;
+            font-size: 14px;
+            outline: none;
+            background: rgba(255, 255, 255, 0.1);
         }
+
+        #playback-speed:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            color: var(--primary-color);
+        }
+
+        #playback-speed option {
+            background: var(--bg-dark);
+            color: var(--text-color);
+            padding: 8px;
+        }
+
+        /* This ensures the select arrow matches the theme */
+        #playback-speed::-ms-expand {
+            display: none;
+        }
+
 
         /* Remove the existing hover rule since we're handling it with JavaScript now */
         #player-container:not(:hover) #controls-overlay {
@@ -85,38 +111,174 @@
 
         /* Time Control Row */
         .time-control-row {
+            position: relative;
+            padding: 15px 0;
+            margin-bottom: 0;
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 12px;
-            min-width: 460px;
+            gap: 15px;
         }
 
-        /* Time Slider */
         #time-slider {
-            flex: 1;
+            --thumb-width: 30px;
+            --thumb-height: 30px;
+            --track-height: 5px;
+            --track-color: rgba(255, 255, 255, 0.2);
+            --track-filled-color: var(--primary-color);
+            
             -webkit-appearance: none;
-            height: 5px;
-            background: var(--slider-bg);
-            border-radius: 2.5px;
-            min-width: 200px;
+            flex: 1;
+            height: var(--track-height);
+            background: transparent;
+            cursor: pointer;
+            position: relative;
+            margin: 0;
         }
 
         #time-display {
-            min-width: 90px;
-            text-align: right;
             font-size: 14px;
             color: var(--text-color);
             white-space: nowrap;
+            min-width: 100px;
+            text-align: right;
         }
 
+        /* Track styles */
+        #time-slider::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 100%;
+            height: var(--track-height);
+            background: var(--track-color);
+            border-radius: 2px;
+            transition: height 0.2s ease;
+        }
+
+        /* Filled track styles with wave animation */
+        #time-slider::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: calc(var(--progress-percent, 0) * 1%);
+            height: var(--track-height);
+            background: var(--track-filled-color);
+            border-radius: 2px;
+            transition: height 0.2s ease;
+        }
+
+        /* Wave effect overlay */
+        .wave-overlay {
+            position: absolute;
+            left: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: calc(var(--progress-percent, 0) * 1%);
+            height: var(--track-height);
+            overflow: hidden;
+            border-radius: 2px;
+            pointer-events: none;
+        }
+
+        .wave {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 200%;
+            height: 100%;
+            background: linear-gradient(90deg, 
+                transparent 0%,
+                rgba(255, 255, 255, 0.3) 50%,
+                transparent 100%
+            );
+            animation: wave 2s linear infinite;
+            transform: translateX(-50%);
+        }
+
+        @keyframes wave {
+            0% {
+                transform: translateX(-50%) scaleX(1);
+            }
+            50% {
+                transform: translateX(0%) scaleX(1.2);
+            }
+            100% {
+                transform: translateX(50%) scaleX(1);
+            }
+        }
+
+        /* Thumb styles */
         #time-slider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 12px;
-            height: 12px;
-            background: var(--primary-color);
+            width: var(--thumb-width);
+            height: var(--thumb-height);
             border-radius: 50%;
+            background: var(--track-filled-color);
             cursor: pointer;
+            position: relative;
+            z-index: 2;
+            transform: scale(0.6);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 0 0 0 rgba(255, 102, 0, 0.3);
+        }
+
+        /* Hover and active states */
+        #time-slider:hover::before,
+        #time-slider:active::before,
+        #time-slider:hover::after,
+        #time-slider:active::after {
+            height: calc(var(--track-height) * 1.5);
+        }
+
+        #time-slider:hover::-webkit-slider-thumb {
+            transform: scale(1);
+            box-shadow: 0 0 0 8px rgba(255, 102, 0, 0.2);
+        }
+
+        #time-slider:active::-webkit-slider-thumb {
+            transform: scale(1.1);
+            box-shadow: 0 0 0 12px rgba(255, 102, 0, 0.3);
+        }
+
+        /* Preview bubble */
+        .time-preview {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            bottom: 100%;
+            transform: translateX(-50%);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            margin-bottom: 8px;
+        }
+
+        .time-preview.visible {
+            opacity: 1;
+        }
+
+        /* Ripple effect */
+        .slider-ripple {
+            position: absolute;
+            border-radius: 50%;
+            background: rgba(255, 102, 0, 0.4);
+            transform: scale(0);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        @keyframes ripple {
+            to {
+                transform: scale(4);
+                opacity: 0;
+            }
         }
 
         /* Main Controls */
@@ -526,6 +688,23 @@
             max-height: 300px;
             overflow-y: auto;
             margin-bottom: 10px;
+        }
+
+        .subtitle-track-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .subtitle-track-list::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .subtitle-track-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        .subtitle-track-list::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
         }
 
         .subtitle-item {
