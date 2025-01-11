@@ -1,6 +1,6 @@
 {
   "name": "fury",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
@@ -41,7 +41,23 @@
       "node_modules/ffmpeg-static/**/*",
       "node_modules/ffprobe-static/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe",
+        "to": "ffmpeg.exe",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "node_modules/ffprobe-static/bin/win32/x64/ffprobe.exe",
+        "to": "ffprobe.exe",
+        "filter": ["**/*"]
+      }
+    ],
     "win": {
+      "asarUnpack": [
+        "node_modules/ffmpeg-static/**/*",
+        "node_modules/ffprobe-static/**/*"
+      ],
       "target": [
         "nsis"
       ],
