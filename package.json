@@ -1,13 +1,11 @@
 {
   "name": "fury",
-  "version": "0.0.23",
+  "version": "0.0.24",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "postinstall": "electron-builder install-app-deps",
-    "rebuild": "electron-rebuild -f -w better-sqlite3",
     "publish": "electron-builder -p always"
   },
   "repository": {
@@ -15,7 +13,6 @@
     "url": "https://github.com/naveen-devang/Fury.git"
   },
   "dependencies": {
-    "electron-is-packaged": "^1.0.2",
     "electron-log": "^5.0.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.1.7",
@@ -36,28 +33,19 @@
   "build": {
     "appId": "com.fury.mediaplayer",
     "productName": "Fury",
-    "asar": true,
-    "extraResources": [
-      {
-        "from": "node_modules/ffmpeg-static/bin/win32/x64/ffmpeg.exe",
-        "to": "ffmpeg/ffmpeg.exe"
-      },
-      {
-          "from": "node_modules/ffprobe-static/bin/win32/x64/ffprobe.exe", 
-          "to": "ffmpeg/ffprobe.exe"
-      },
-      {
-        "from": "node_modules/ffprobe-static/bin",
-        "to": "ffmpeg",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
     "directories": {
       "output": "dist"
     },
+    "files": [
+      "**/*",
+      "node_modules/ffmpeg-static/**/*",
+      "node_modules/ffprobe-static/**/*"
+    ],
     "win": {
+      "asarUnpack": [
+        "node_modules/ffmpeg-static/**/*",
+        "node_modules/ffprobe-static/**/*"
+      ],
       "target": [
         "nsis"
       ],

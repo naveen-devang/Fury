@@ -16,6 +16,7 @@ if (isHardwareAccelerated) {
   app.commandLine.appendSwitch('enable-zero-copy');
 }
 
+
 // Configure logging
 log.transports.file.level = 'debug';
 autoUpdater.logger = log;
