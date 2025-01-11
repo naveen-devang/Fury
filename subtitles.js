@@ -16,6 +16,9 @@ const mkdir = promisify(fs.mkdir);
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath.path);
 
+console.log('FFmpeg Path:', ffmpegPath);
+console.log('FFprobe Path:', ffprobePath);
+
 class SubtitlesManager {
     constructor(mediaPlayer) {
 

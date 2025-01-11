@@ -42,10 +42,6 @@
       "node_modules/ffprobe-static/**/*"
     ],
     "win": {
-      "asarUnpack": [
-        "node_modules/ffmpeg-static/**/*",
-        "node_modules/ffprobe-static/**/*"
-      ],
       "target": [
         "nsis"
       ],
