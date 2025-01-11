@@ -8,6 +8,7 @@ const createMenuTemplate = require('./menu-template');
 const RELEASE_NOTES = require('./release-notes');
 const store = new Store();
 const isHardwareAccelerated = store.get('hardwareAcceleration', true);
+const isDev = require('electron-is-dev');
 
 if (isHardwareAccelerated) {
   app.commandLine.appendSwitch('force_high_performance_gpu');
@@ -16,6 +17,10 @@ if (isHardwareAccelerated) {
   app.commandLine.appendSwitch('enable-zero-copy');
 }
 
+if (!isDev) {
+  process.env.FFMPEG_PATH = path.join(process.resourcesPath, 'bin', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  process.env.FFPROBE_PATH = path.join(process.resourcesPath, 'bin', 'ffprobe', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+}
 
 // Configure logging
 log.transports.file.level = 'debug';

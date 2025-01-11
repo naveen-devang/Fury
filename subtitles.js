@@ -1,4 +1,5 @@
 const { ipcRenderer } = require('electron');
+const { app } = require('electron');
 const fs = require('fs').promises;
 const path = require('path');
 const srt2vtt = require('srt-to-vtt');
@@ -13,82 +14,10 @@ const { promisify } = require('util');
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
 
+const isDev = require('electron-is-dev');
+
 ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath.path);
-
-function getFFmpegPaths() {
-    const isPackaged = process.type === 'renderer' && process.resourcesPath;
-    
-    let ffmpegExecutable = ffmpegPath;
-    let ffprobeExecutable = ffprobePath.path;
-    
-    if (isPackaged) {
-        // When packaged, executables should be in resources folder
-        const resourcesPath = process.resourcesPath;
-        
-        if (process.platform === 'win32') {
-            ffmpegExecutable = path.join(resourcesPath, 'ffmpeg.exe');
-            ffprobeExecutable = path.join(resourcesPath, 'ffprobe.exe');
-        } else {
-            ffmpegExecutable = path.join(resourcesPath, 'ffmpeg');
-            ffprobeExecutable = path.join(resourcesPath, 'ffprobe');
-        }
-
-        // Verify files exist
-        try {
-            if (!fs.existsSync(ffmpegExecutable) || !fs.existsSync(ffprobeExecutable)) {
-                console.error('FFmpeg executables not found in resources folder');
-                return { ffmpegExecutable: ffmpegPath, ffprobeExecutable: ffprobePath.path };
-            }
-        } catch (error) {
-            console.error('Error checking FFmpeg executables:', error);
-            return { ffmpegExecutable: ffmpegPath, ffprobeExecutable: ffprobePath.path };
-        }
-    }
-    
-    return { ffmpegExecutable, ffprobeExecutable };
-}
-
-
-function initializeFFmpeg() {
-    try {
-        const { ffmpegExecutable, ffprobeExecutable } = getFFmpegPaths();
-        
-        // Log the resolved paths
-        console.log('FFmpeg Path:', ffmpegExecutable);
-        console.log('FFprobe Path:', ffprobeExecutable);
-        
-        // Set paths in ffmpeg module
-        ffmpeg.setFfmpegPath(ffmpegExecutable);
-        ffmpeg.setFfprobePath(ffprobeExecutable);
-        
-        // Test FFmpeg availability
-        const { exec } = require('child_process');
-        
-        // Test FFmpeg
-        exec(`"${ffmpegExecutable}" -version`, (error, stdout, stderr) => {
-            if (error) {
-                console.error('FFmpeg execution error:', error);
-            } else {
-                console.log('FFmpeg output:', stdout);
-            }
-        });
-
-        // Test FFprobe
-        exec(`"${ffprobeExecutable}" -version`, (error, stdout, stderr) => {
-            if (error) {
-                console.error('FFprobe execution error:', error);
-            } else {
-                console.log('FFprobe output:', stdout);
-            }
-        });
-        
-        return true;
-    } catch (error) {
-        console.error('Error initializing FFmpeg:', error);
-        return false;
-    }
-}
 
 class SubtitlesManager {
     constructor(mediaPlayer) {
@@ -104,10 +33,21 @@ class SubtitlesManager {
         this.tempDir = path.join(os.tmpdir(), 'video-player-subtitles');
 
         // Initialize FFmpeg with explicit error handling
+        const ffmpegPath = isDev ? 
+        require('ffmpeg-static') :
+        path.join(process.resourcesPath, 'bin', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+    
+        const ffprobePath = isDev ?
+            require('ffprobe-static').path :
+            path.join(process.resourcesPath, 'bin', 'ffprobe', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+
         try {
             ffmpeg.setFfmpegPath(ffmpegPath);
-            ffmpeg.setFfprobePath(ffprobePath.path);
+            ffmpeg.setFfprobePath(ffprobePath);
+            this.ffmpegAvailable = true;
         } catch (error) {
+            console.error('Error setting FFmpeg paths:', error);
+            this.ffmpegAvailable = false;
         }
 
         this.ffmpegAvailable = this.checkFFmpegAvailability();
