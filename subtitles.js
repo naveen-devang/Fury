@@ -19,6 +19,25 @@ ffmpeg.setFfprobePath(ffprobePath.path);
 console.log('FFmpeg Path:', ffmpegPath);
 console.log('FFprobe Path:', ffprobePath);
 
+const { exec } = require('child_process');
+
+exec(`"${ffmpegPath}" -version`, (error, stdout, stderr) => {
+    if (error) {
+        console.error('FFmpeg execution error:', error);
+    } else {
+        console.log('FFmpeg output:', stdout);
+    }
+});
+
+exec(`"${ffprobePath}" -version`, (error, stdout, stderr) => {
+    if (error) {
+        console.error('FFprobe execution error:', error);
+    } else {
+        console.log('FFprobe output:', stdout);
+    }
+});
+
+
 class SubtitlesManager {
     constructor(mediaPlayer) {
 
