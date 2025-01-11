@@ -1,23 +1,55 @@
 const { ipcRenderer } = require('electron');
-const { app } = require('electron');
 const fs = require('fs').promises;
-const path = require('path');
 const srt2vtt = require('srt-to-vtt');
 const { createReadStream } = require('fs');
 const Store = new require('electron-store');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
-const ffprobePath = require('ffprobe-static');
-const store = new Store();
 const os = require('os');
 const { promisify } = require('util');
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
 
-const isDev = require('electron-is-dev');
+// Replace the FFmpeg initialization code at the top of subtitles.js with this:
+const { app } = require('@electron/remote'); // Add this line
+const ffmpeg = require('fluent-ffmpeg');
+const path = require('path');
 
-ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobePath.path);
+function initializeFfmpeg() {
+    try {
+        if (!app.isPackaged) {
+            // Development mode
+            ffmpegBinary = require('ffmpeg-static');
+            ffprobeBinary = require('ffprobe-static').path;
+        } else {
+            // Production mode
+            const ffmpegBinaryDir = path.join(process.resourcesPath, 'ffmpeg-binaries');
+            const isWin = process.platform === 'win32';
+            const ffmpegExt = isWin ? '.exe' : '';
+            const ffprobeExt = isWin ? '.exe' : '';
+            
+            ffmpegBinary = path.join(ffmpegBinaryDir, `ffmpeg${ffmpegExt}`);
+            ffprobeBinary = path.join(ffmpegBinaryDir, `ffprobe${ffprobeExt}`);
+        }
+
+        // Set FFmpeg paths
+        ffmpeg.setFfmpegPath(ffmpegBinary);
+        ffmpeg.setFfprobePath(ffprobeBinary);
+        
+        // Verify the paths exist
+        const fs = require('fs');
+        if (!fs.existsSync(ffmpegBinary)) {
+            throw new Error(`FFmpeg binary not found at: ${ffmpegBinary}`);
+        }
+        if (!fs.existsSync(ffprobeBinary)) {
+            throw new Error(`FFprobe binary not found at: ${ffprobeBinary}`);
+        }
+
+        return true;
+    } catch (error) {
+        console.error('FFmpeg initialization error:', error);
+        return false;
+    }
+}
+
 
 class SubtitlesManager {
     constructor(mediaPlayer) {
@@ -32,25 +64,11 @@ class SubtitlesManager {
         this.subtitleCache = new Map();
         this.tempDir = path.join(os.tmpdir(), 'video-player-subtitles');
 
-        // Initialize FFmpeg with explicit error handling
-        const ffmpegPath = isDev ? 
-        require('ffmpeg-static') :
-        path.join(process.resourcesPath, 'bin', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-    
-        const ffprobePath = isDev ?
-            require('ffprobe-static').path :
-            path.join(process.resourcesPath, 'bin', 'ffprobe', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
-
-        try {
-            ffmpeg.setFfmpegPath(ffmpegPath);
-            ffmpeg.setFfprobePath(ffprobePath);
-            this.ffmpegAvailable = true;
-        } catch (error) {
-            console.error('Error setting FFmpeg paths:', error);
-            this.ffmpegAvailable = false;
+        this.ffmpegAvailable = initializeFfmpeg();
+        
+        if (!this.ffmpegAvailable) {
+            console.error('FFmpeg initialization failed. Embedded subtitles will not be available.');
         }
-
-        this.ffmpegAvailable = this.checkFFmpegAvailability();
 
         this.store = new Store();
         this.autoLoadEnabled = store.get('autoLoadSubtitles', true);
@@ -233,31 +251,6 @@ class SubtitlesManager {
                 resolve(subtitleInfo);
             });
         });
-    }
-
-    checkFFmpegAvailability() {
-        try {
-            // Detailed path checking
-            if (!ffmpegPath) {
-                return false;
-            }
-            if (!ffprobePath || !ffprobePath.path) {
-                return false;
-            }
-
-            // Verify the paths exist
-            const fs = require('fs');
-            if (!fs.existsSync(ffmpegPath)) {
-                return false;
-            }
-            if (!fs.existsSync(ffprobePath.path)) {
-                return false;
-            }
-
-            return true;
-        } catch (error) {
-            return false;
-        }
     }
 
     saveSubtitleState() {

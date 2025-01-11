@@ -1,19 +1,20 @@
 {
   "name": "fury",
-  "version": "0.0.31",
+  "version": "0.0.35",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "publish": "electron-builder -p always"
+    "publish": "electron-builder -p always",
+    "postinstall": "node copyFFmpeg.js"
   },
   "repository": {
     "type": "git",
     "url": "https://github.com/naveen-devang/Fury.git"
   },
   "dependencies": {
-    "electron-is-dev": "^3.0.1",
+    "@electron/remote": "^2.1.2",
     "electron-log": "^5.0.1",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.1.7",
@@ -35,24 +36,12 @@
     "directories": {
       "output": "dist"
     },
-    "files": [
-      "**/*",
-      "!node_modules/ffmpeg-static/ffmpeg${/*}",
-      "!node_modules/ffprobe-static/bin${/*}"
-    ],
     "extraResources": [
       {
-        "from": "node_modules/ffmpeg-static/",
-        "to": "bin/ffmpeg",
+        "from": "ffmpeg-binaries/",
+        "to": "ffmpeg-binaries/",
         "filter": [
-          "ffmpeg*"
-        ]
-      },
-      {
-        "from": "node_modules/ffprobe-static/bin",
-        "to": "bin/ffprobe",
-        "filter": [
-          "*"
+          "**/*"
         ]
       }
     ],

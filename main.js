@@ -8,18 +8,15 @@ const createMenuTemplate = require('./menu-template');
 const RELEASE_NOTES = require('./release-notes');
 const store = new Store();
 const isHardwareAccelerated = store.get('hardwareAcceleration', true);
-const isDev = require('electron-is-dev');
+
+const remoteMain = require('@electron/remote/main');
+remoteMain.initialize();
 
 if (isHardwareAccelerated) {
   app.commandLine.appendSwitch('force_high_performance_gpu');
   app.commandLine.appendSwitch('ignore-gpu-blacklist');
   app.commandLine.appendSwitch('enable-gpu-rasterization');
   app.commandLine.appendSwitch('enable-zero-copy');
-}
-
-if (!isDev) {
-  process.env.FFMPEG_PATH = path.join(process.resourcesPath, 'bin', 'ffmpeg', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-  process.env.FFPROBE_PATH = path.join(process.resourcesPath, 'bin', 'ffprobe', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
 }
 
 // Configure logging
@@ -37,11 +34,15 @@ function createWindow() {
       webPreferences: {
           nodeIntegration: true,
           contextIsolation: false,
+          enableRemote: true,
           powerPreferences: 'high-performance'
       },
       autoHideMenuBar: false,
       frame: true
   });
+
+  // Enable remote module for this window
+  remoteMain.enable(mainWindow.webContents);
   
   // Set the application menu
   menuTemplate = createMenuTemplate(mainWindow);
