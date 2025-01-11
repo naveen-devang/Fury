@@ -17,7 +17,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath.path);
 
 function getFFmpegPaths() {
-    const isPackaged = process.type === 'renderer' && process.resourcesPath && process.resourcesPath.includes('app.asar');
+    const isPackaged = process.type === 'renderer' && process.resourcesPath && process.resourcesPath.includes('app.asar.unpacked');
     
     let ffmpegExecutable = ffmpegPath;
     let ffprobeExecutable = ffprobePath.path;

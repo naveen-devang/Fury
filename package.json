@@ -1,6 +1,6 @@
 {
   "name": "fury",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
@@ -73,30 +73,18 @@
       "target": [
         "nsis"
       ],
-      "nsis": {
-        "oneClick": false,
-        "allowToChangeInstallationDirectory": true
-      },
       "icon": "build/icon.ico"
     },
     "mac": {
       "target": [
         "dmg"
       ],
-      "nsis": {
-        "oneClick": false,
-        "allowToChangeInstallationDirectory": true
-      },
       "icon": "build/icon.icns"
     },
     "linux": {
       "target": [
         "AppImage"
       ],
-      "nsis": {
-        "oneClick": false,
-        "allowToChangeInstallationDirectory": true
-      },
       "icon": "build/icon.png"
     },
     "publish": {
