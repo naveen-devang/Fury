@@ -17,7 +17,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath.path);
 
 function getFFmpegPaths() {
-    const isPackaged = process.type === 'renderer' && process.resourcesPath && process.resourcesPath.includes('app.asar.unpacked');
+    const isPackaged = process.type === 'renderer' && process.resourcesPath;
     
     let ffmpegExecutable = ffmpegPath;
     let ffprobeExecutable = ffprobePath.path;
@@ -102,8 +102,6 @@ class SubtitlesManager {
         this.activeTrack = null;
         this.subtitleCache = new Map();
         this.tempDir = path.join(os.tmpdir(), 'video-player-subtitles');
-
-        this.ffmpegAvailable = initializeFFmpeg();
 
         // Initialize FFmpeg with explicit error handling
         try {
