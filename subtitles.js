@@ -17,7 +17,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 ffmpeg.setFfprobePath(ffprobePath.path);
 
 function getFFmpegPaths() {
-    const isPackaged = process.mainModule.filename.includes('app.asar');
+    const isPackaged = process.type === 'renderer' && process.resourcesPath && process.resourcesPath.includes('app.asar');
     
     let ffmpegExecutable = ffmpegPath;
     let ffprobeExecutable = ffprobePath.path;
@@ -33,6 +33,17 @@ function getFFmpegPaths() {
             ffmpegExecutable = path.join(resourcesPath, 'ffmpeg');
             ffprobeExecutable = path.join(resourcesPath, 'ffprobe');
         }
+
+        // Verify files exist
+        try {
+            if (!fs.existsSync(ffmpegExecutable) || !fs.existsSync(ffprobeExecutable)) {
+                console.error('FFmpeg executables not found in resources folder');
+                return { ffmpegExecutable: ffmpegPath, ffprobeExecutable: ffprobePath.path };
+            }
+        } catch (error) {
+            console.error('Error checking FFmpeg executables:', error);
+            return { ffmpegExecutable: ffmpegPath, ffprobeExecutable: ffprobePath.path };
+        }
     }
     
     return { ffmpegExecutable, ffprobeExecutable };
@@ -47,16 +58,28 @@ function initializeFFmpeg() {
         console.log('FFmpeg Path:', ffmpegExecutable);
         console.log('FFprobe Path:', ffprobeExecutable);
         
+        // Set paths in ffmpeg module
         ffmpeg.setFfmpegPath(ffmpegExecutable);
         ffmpeg.setFfprobePath(ffprobeExecutable);
         
         // Test FFmpeg availability
         const { exec } = require('child_process');
+        
+        // Test FFmpeg
         exec(`"${ffmpegExecutable}" -version`, (error, stdout, stderr) => {
             if (error) {
                 console.error('FFmpeg execution error:', error);
             } else {
                 console.log('FFmpeg output:', stdout);
+            }
+        });
+
+        // Test FFprobe
+        exec(`"${ffprobeExecutable}" -version`, (error, stdout, stderr) => {
+            if (error) {
+                console.error('FFprobe execution error:', error);
+            } else {
+                console.log('FFprobe output:', stdout);
             }
         });
         

@@ -1,6 +1,6 @@
 {
   "name": "fury",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "description": "Media player using Electron",
   "main": "main.js",
   "scripts": {
@@ -39,7 +39,19 @@
     "files": [
       "**/*",
       "node_modules/ffmpeg-static/**/*",
-      "node_modules/ffprobe-static/**/*"
+      "node_modules/ffprobe-static/**/*",
+      "**/*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
     ],
     "extraResources": [
       {
@@ -60,6 +72,10 @@
       ],
       "target": [
         "nsis"
+      ],
+      "nsis": [
+        "oneClick: false",
+        "allowToChangeInstallationDirectory: true"
       ],
       "icon": "build/icon.ico"
     },
