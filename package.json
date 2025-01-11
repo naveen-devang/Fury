@@ -73,22 +73,30 @@
       "target": [
         "nsis"
       ],
-      "nsis": [
-        "oneClick: false",
-        "allowToChangeInstallationDirectory: true"
-      ],
+      "nsis": {
+        "oneClick": false,
+        "allowToChangeInstallationDirectory": true
+      },
       "icon": "build/icon.ico"
     },
     "mac": {
       "target": [
         "dmg"
       ],
+      "nsis": {
+        "oneClick": false,
+        "allowToChangeInstallationDirectory": true
+      },
       "icon": "build/icon.icns"
     },
     "linux": {
       "target": [
         "AppImage"
       ],
+      "nsis": {
+        "oneClick": false,
+        "allowToChangeInstallationDirectory": true
+      },
       "icon": "build/icon.png"
     },
     "publish": {
