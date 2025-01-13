@@ -17,6 +17,11 @@ if (isHardwareAccelerated) {
   app.commandLine.appendSwitch('ignore-gpu-blacklist');
   app.commandLine.appendSwitch('enable-gpu-rasterization');
   app.commandLine.appendSwitch('enable-zero-copy');
+  // Add these new switches
+  app.commandLine.appendSwitch('enable-accelerated-video-decode');
+  app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
+  app.commandLine.appendSwitch('enable-hardware-overlays', 'single-fullscreen');
+  app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
 }
 
 // Configure logging

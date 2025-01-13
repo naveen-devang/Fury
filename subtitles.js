@@ -326,7 +326,7 @@ class SubtitlesManager {
         `;
 
         // Insert elements
-        advancedOptions.insertBefore(subtitleButton, advancedOptions.lastChild);
+        advancedOptions.insertBefore(subtitleButton, advancedOptions.firstChild);
         controlsOverlay.appendChild(subtitleMenu);
 
         // Event listeners
