@@ -5,7 +5,7 @@ const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const createMenuTemplate = require('./menu-template');
-const RELEASE_NOTES = require('./release-notes');
+const { RELEASE_NOTES, getReleaseNotes } = require('./release-notes');
 const store = new Store();
 const isHardwareAccelerated = store.get('hardwareAcceleration', true);
 
@@ -30,6 +30,63 @@ autoUpdater.logger = log;
 
 let mainWindow;
 
+let fileToOpen = null;
+
+// Handle files opened through OS
+function handleFileOpen(event, filePath) {
+  event?.preventDefault();
+  
+  // Normalize the file path
+  filePath = filePath.replace(/^"(.*)"$/, '$1'); // Remove quotes if present
+  
+  if (mainWindow) {
+      // If window is already open, send the file path to renderer
+      mainWindow.webContents.send('file-opened', filePath);
+  } else {
+      // Store the file path to be handled after window creation
+      fileToOpen = filePath;
+  }
+}
+
+// Register file open handlers
+if (process.platform === 'win32') {
+  // For Windows - handle both protocol and file associations
+  const gotTheLock = app.requestSingleInstanceLock();
+  
+  if (!gotTheLock) {
+      app.quit();
+  } else {
+      app.on('second-instance', (event, commandLine) => {
+          // Someone tried to run a second instance, focus our window instead
+          if (mainWindow) {
+              if (mainWindow.isMinimized()) mainWindow.restore();
+              mainWindow.focus();
+              
+              // Find and handle media file path from second instance
+              const filePath = commandLine.find((arg) => {
+                  return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(arg);
+              });
+              
+              if (filePath) {
+                  handleFileOpen(null, filePath);
+              }
+          }
+      });
+
+      // Handle file opened from Explorer
+      const filePath = process.argv.slice(1).find((arg) => {
+          return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(arg);
+      });
+      
+      if (filePath) {
+          fileToOpen = filePath;
+      }
+  }
+} else {
+  // For macOS
+  app.on('open-file', handleFileOpen);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
       width: 1200,
@@ -40,7 +97,16 @@ function createWindow() {
           nodeIntegration: true,
           contextIsolation: false,
           enableRemote: true,
-          powerPreferences: 'high-performance'
+          powerPreferences: 'high-performance',
+          contentSecurityPolicy: `
+          default-src 'self';
+          script-src 'self';
+          style-src 'self' 'unsafe-inline';
+          media-src 'self' file:;
+          img-src 'self' data: file:;
+          font-src 'self';
+          connect-src 'self';
+        `
       },
       autoHideMenuBar: false,
       frame: true
@@ -55,6 +121,17 @@ function createWindow() {
   Menu.setApplicationMenu(menu);
   
   mainWindow.loadFile('index.html');
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (fileToOpen) {
+        // Short delay to ensure renderer is fully ready
+        setTimeout(() => {
+            mainWindow.webContents.send('file-opened', fileToOpen);
+            fileToOpen = null;
+        }, 500);
+      }
+  });
+
   autoUpdater.checkForUpdatesAndNotify();
 }
 
@@ -81,9 +158,13 @@ autoUpdater.on('update-available', (info) => {
   const version = info.version;
   let releaseNotes = 'No release notes available';
 
-  if (RELEASE_NOTES[version]) {
-    releaseNotes = '• ' + RELEASE_NOTES[version].join('\n• ');
-  } else if (info.releaseNotes) {
+  // First try to get notes from our local file
+  const localNotes = getReleaseNotes(version);
+  if (localNotes) {
+    releaseNotes = localNotes;
+  }
+  // If no local notes, try to get them from the update info
+  else if (info.releaseNotes) {
     if (typeof info.releaseNotes === 'string') {
       releaseNotes = info.releaseNotes;
     } else if (Array.isArray(info.releaseNotes)) {
