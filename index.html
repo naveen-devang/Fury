@@ -44,9 +44,13 @@
                             <div id="playback-speed-container">
                                 <button class="speed-button" id="speed-toggle">1.0x</button>
                                 <div class="speed-options">
+                                    <button class="speed-option" data-speed="0.25">0.25x</button>
                                     <button class="speed-option" data-speed="0.5">0.5x</button>
+                                    <button class="speed-option" data-speed="0.75">0.75x</button>
                                     <button class="speed-option active" data-speed="1.0">1.0x</button>
+                                    <button class="speed-option" data-speed="1.25">1.25x</button>
                                     <button class="speed-option" data-speed="1.5">1.5x</button>
+                                    <button class="speed-option" data-speed="1.75">1.75x</button>
                                     <button class="speed-option" data-speed="2.0">2.0x</button>
                                 </div>
                             </div>
@@ -54,11 +58,7 @@
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
                             </button>
                             <button class="control-button" id="toggle-playlist" title="Toggle Playlist">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <line x1="3" y1="12" x2="21" y2="12"></line>
-                                    <line x1="3" y1="6" x2="21" y2="6"></line>
-                                    <line x1="3" y1="18" x2="21" y2="18"></line>
-                                </svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list-music"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/></svg>
                             </button>
                         </div>
                     </div>
@@ -94,6 +94,19 @@
                 </div>
             </div>
         </div>
+
+        <template id="resume-dialog-template">
+            <div class="resume-dialog">
+                <div class="resume-content">
+                    <p class="resume-position-text">Resume from <span class="resume-time"></span>?</p>
+                    <p class="countdown"></p>
+                    <div class="resume-buttons">
+                        <button class="resume-yes">Yes</button>
+                        <button class="resume-no">No</button>
+                    </div>
+                </div>
+            </div>
+        </template>
     </div>
     <script src="renderer.js"></script>
 </body>

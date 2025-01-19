@@ -13,6 +13,8 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    -webkit-user-select: none; /* For Webkit browsers (Chrome, Safari) */
+    user-select: none;         /* Standard syntax */
 }
 
 body {
@@ -448,6 +450,8 @@ body {
 #time-slider:focus,
 #volume-slider:focus,
 .control-button:focus,
+.speed-button:focus,
+.subtitle-controls:focus
 select:focus {
     outline: none;
 }
@@ -467,6 +471,44 @@ select {
     display: flex;
     align-items: center;
     gap: 15px;
+}
+
+.resume-dialog {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    padding: 20px;
+    border-radius: 8px;
+    z-index: 1000;
+}
+.resume-content {
+    color: white;
+    text-align: center;
+}
+.countdown {
+    color: #888;
+    font-size: 0.9em;
+    margin: 8px 0;
+}
+.resume-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 10px;
+}
+.resume-buttons button {
+    padding: 5px 15px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.03);
+    color: white;
+}
+.resume-buttons button:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--primary-color);
 }
 
 /* Playlist Panel */
@@ -824,4 +866,86 @@ select:hover, button:hover {
     font-family: Arial, sans-serif;
     font-size: 1em;
     line-height: 1.2;
+}
+
+
+.audio-menu {
+    position: absolute;
+    bottom: 80%;
+    right: 40px;
+    background: var(--control-bg);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 10px;
+    min-width: 250px;
+    z-index: 9999;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.audio-track-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+}
+
+.audio-track-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.audio-track-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.audio-track-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.audio-track-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.audio-item {
+    padding: 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    color: var(--text-color);
+    margin-bottom: 4px;
+}
+
+.audio-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.audio-item.active {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.audio-controls {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 10px;
+}
+
+.audio-controls button {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text-color);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.audio-controls button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.audio-controls label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
 }

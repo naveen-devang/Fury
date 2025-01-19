@@ -112,6 +112,12 @@ function createWindow() {
       frame: true
   });
 
+  mainWindow.webContents.on('dom-ready', () => {
+    mainWindow.webContents.executeJavaScript(`
+      document.addEventListener('selectstart', (e) => e.preventDefault());
+    `);
+  });
+
   // Enable remote module for this window
   remoteMain.enable(mainWindow.webContents);
   
@@ -238,6 +244,13 @@ ipcMain.handle('open-files', async () => {
       ]
   });
   return result.filePaths;
+});
+
+
+ipcMain.handle('open-folder', async () => {
+  return dialog.showOpenDialog({
+      properties: ['openDirectory']
+  });
 });
 
 ipcMain.handle('open-subtitle-file', async () => {

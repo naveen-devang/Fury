@@ -1,43 +1,43 @@
 const { ipcRenderer } = require('electron');
 const { parseFile } = require('music-metadata');
+const fs = require('fs').promises;
 const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
 const { applyTheme, getCurrentTheme } = require('./src/themes');
 
+const HardwareAcceleration = require('./src/hardwareAccelerations');
 const SubtitlesManager = require('./subtitles');
 
 let playlist = [];
 let currentIndex = -1;
 let isLooping = false;
+let isLoopingCurrent = false; // For single media loop
 let isShuffling = false;
 let shuffledIndices = [];
 let currentShuffleIndex = -1;
-
 let clickTimeout = null;
-const doubleClickDelay = 300; // milliseconds
-
 let controlsTimeout;
 let isFullscreen = false;
+let seekTargetTime = null;
+let isSeekingSmooth = false;
+let lastSeekUpdate = 0;
+let isDragging = false;
+let animationFrame;
+let lastVolume = store.get('lastVolume', 0.5); // 50%
+let activeResumeTimer = null;
+let activeDialog = null;
+
+const doubleClickDelay = 300; // milliseconds
 const INACTIVITY_TIMEOUT = 3000; // 3 seconds
 const LAST_POSITIONS_KEY = 'lastPositions';
 const MAX_STORED_POSITIONS = 1000; // Limit number of stored positions to prevent excessive storage
 const MINIMUM_DURATION = 60; // Only store position for media longer than 1 minute
 const MINIMUM_POSITION = 30; // Only store position if user watched more than 30 seconds
-
-let seekTargetTime = null;
-let isSeekingSmooth = false;
-let lastSeekUpdate = 0;
 const SEEK_UPDATE_INTERVAL = 2.78; // ~360fps
-
 const rememberPlayback = store.get('rememberPlayback', true); // Default to true for existing users
-
-// Add minimum window size handling
 const MIN_WINDOW_WIDTH = 780;
 const MIN_WINDOW_HEIGHT = 580;
-
-let isHardwareAccelerated = store.get('hardwareAcceleration', true); // Default to true
-
 
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme(getCurrentTheme());
@@ -119,15 +119,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-let isDragging = false;
-let animationFrame;
-
-// Initialize player state
-let lastVolume = store.get('lastVolume', 0.5); // 50%
 mediaPlayer.volume = lastVolume;
 volumeSlider.value = lastVolume * 100;
-
-
 
 const timePreview = document.createElement('div');
 timePreview.className = 'time-preview';
@@ -188,14 +181,12 @@ function adjustForScreenSize() {
 window.addEventListener('load', adjustForScreenSize);
 window.addEventListener('resize', adjustForScreenSize);
 
-
 togglePlaylistButton.addEventListener('click', () => {
     playlistPanel.classList.toggle('hidden');
     togglePlaylistButton.classList.toggle('active');
     appContainer.classList.toggle('playlist-hidden');
 });
 
-// Add this event listener after other event listeners
 mediaPlayer.addEventListener('click', (e) => {
     // Prevent text selection on double click
     if (e.detail > 1) {
@@ -220,6 +211,7 @@ mediaPlayer.addEventListener('click', (e) => {
 });
 
 const subtitlesManager = window.subtitlesManager = new SubtitlesManager(mediaPlayer);
+const hardwareAcceleration = new HardwareAcceleration(mediaPlayer);
 
 // Clear the timeout if the user moves away or starts dragging
 mediaPlayer.addEventListener('mouseleave', () => {
@@ -236,54 +228,24 @@ mediaPlayer.addEventListener('mousedown', (e) => {
 });
 
 function toggleHardwareAcceleration(enabled) {
-    isHardwareAccelerated = enabled;
-    store.set('hardwareAcceleration', enabled);
+    hardwareAcceleration.toggle(enabled);
     
-    if (mediaPlayer) {
-        if (enabled) {
-            // Enable hardware acceleration
-            mediaPlayer.style.transform = 'translateZ(0)';
-            mediaPlayer.style.willChange = 'transform';
-            mediaPlayer.classList.remove('no-hardware-acceleration');
-            
-            // Force video decoder hardware acceleration when available
-            mediaPlayer.setAttribute('x-webkit-airplay', 'allow');
-            mediaPlayer.setAttribute('webkit-playsinline', '');
-            mediaPlayer.setAttribute('playsinline', '');
-            
-            // Add hardware accelerated video rendering
-            mediaPlayer.style.backfaceVisibility = 'hidden';
-            mediaPlayer.style.perspective = '1000px';
-        } else {
-            // Disable hardware acceleration
-            mediaPlayer.style.transform = 'none';
-            mediaPlayer.style.willChange = 'auto';
-            mediaPlayer.classList.add('no-hardware-acceleration');
-            mediaPlayer.removeAttribute('x-webkit-airplay');
-            mediaPlayer.removeAttribute('webkit-playsinline');
-            mediaPlayer.removeAttribute('playsinline');
-            mediaPlayer.style.backfaceVisibility = 'visible';
-            mediaPlayer.style.perspective = 'none';
-        }
+    // Reload current media to apply changes if something is playing
+    if (currentIndex !== -1 && playlist[currentIndex]) {
+        const currentTime = mediaPlayer.currentTime;
+        const wasPlaying = !mediaPlayer.paused;
+        const currentPath = playlist[currentIndex].path;
         
-        // Reload current media to apply changes if something is playing
-        if (currentIndex !== -1 && playlist[currentIndex]) {
-            const currentTime = mediaPlayer.currentTime;
-            const wasPlaying = !mediaPlayer.paused;
-            const currentPath = playlist[currentIndex].path;
-            
-            mediaPlayer.removeAttribute('src');
-            mediaPlayer.load();
-            
-            mediaPlayer.src = currentPath;
-            mediaPlayer.currentTime = currentTime;
-            if (wasPlaying) {
-                mediaPlayer.play().catch(console.error);
-            }
+        mediaPlayer.removeAttribute('src');
+        mediaPlayer.load();
+        
+        mediaPlayer.src = currentPath;
+        mediaPlayer.currentTime = currentTime;
+        if (wasPlaying) {
+            mediaPlayer.play().catch(console.error);
         }
     }
 }
-
 
 // Load saved playlist
 const savedPlaylist = store.get('playlist', []);
@@ -303,7 +265,6 @@ function updateSliderProgress() {
         const progress = (mediaPlayer.currentTime / mediaPlayer.duration) * 100;
         timeSlider.style.setProperty('--progress-percent', progress);
         
-        // Use transform for smoother animation
         const thumb = timeSlider.querySelector('::-webkit-slider-thumb');
         if (thumb) {
             thumb.style.transform = `translateX(${progress}%)`;
@@ -317,14 +278,11 @@ function handleSliderInteraction(e) {
     const targetTime = pos * mediaPlayer.duration;
     
     if (!isNaN(targetTime)) {
-        // Update the visual time display immediately
         timeDisplay.textContent = `${formatTime(targetTime)} / ${formatTime(mediaPlayer.duration)}`;
         timeSlider.style.setProperty('--progress-percent', pos * 100);
         
-        // Set the target time for smooth seeking
         seekTargetTime = targetTime;
         
-        // Start smooth seeking if not already started
         if (!isSeekingSmooth) {
             isSeekingSmooth = true;
             smoothSeek();
@@ -343,15 +301,12 @@ function smoothSeek() {
         const currentTime = mediaPlayer.currentTime;
         const timeDiff = seekTargetTime - currentTime;
         
-        // If we're close enough to target, set it directly
         if (Math.abs(timeDiff) < 0.1) {
             mediaPlayer.currentTime = seekTargetTime;
             isSeekingSmooth = false;
             seekTargetTime = null;
             return;
         }
-
-        // Calculate the next step (faster for larger differences)
         const step = Math.sign(timeDiff) * Math.min(Math.abs(timeDiff), 1);
         mediaPlayer.currentTime = currentTime + step;
         lastSeekUpdate = now;
@@ -364,12 +319,9 @@ function showControls() {
     controlsOverlay.style.opacity = '1';
     document.body.classList.remove('hide-cursor');
     
-    // Clear any existing timeout
     clearTimeout(controlsTimeout);
-    // Set new timeout
     controlsTimeout = setTimeout(hideControls, INACTIVITY_TIMEOUT);
 }
-
 
 function hideControls() {
     controlsOverlay.style.opacity = '0';
@@ -381,11 +333,9 @@ playPauseBtn.addEventListener('click', togglePlayPause);
 previousBtn.addEventListener('click', playPrevious);
 nextBtn.addEventListener('click', playNext);
 muteBtn.addEventListener('click', toggleMute);
-
 shuffleBtn.addEventListener('click', toggleShuffle);
 loopBtn.addEventListener('click', toggleLoop);
 volumeSlider.addEventListener('input', updateVolume);
-
 timeSlider.addEventListener('input', () => {
     const time = parseFloat(timeSlider.value);
     if (!isNaN(time)) {
@@ -394,7 +344,6 @@ timeSlider.addEventListener('input', () => {
     }
 });
 
-// Set initial button states
 loopBtn.style.opacity = isLooping ? '1' : '0.5';
 shuffleBtn.style.opacity = isShuffling ? '1' : '0.5';
 
@@ -413,13 +362,11 @@ mediaPlayer.addEventListener('loadedmetadata', () => {
         mediaPlayer.preload = 'auto';
     }
 });
-
 timeSlider.addEventListener('mousedown', (e) => {
     isDragging = true;
     handleSliderInteraction(e);
     document.body.style.cursor = 'grabbing';
 });
-
 document.addEventListener('mouseup', () => {
     if (isDragging) {
         isDragging = false;
@@ -428,12 +375,10 @@ document.addEventListener('mouseup', () => {
         document.body.style.cursor = '';
     }
 });
-
 document.addEventListener('mousemove', (e) => {
     if (isDragging) {
         handleSliderInteraction(e);
     }
-    
     // Update preview
     if (timeSlider.matches(':hover')) {
         const rect = timeSlider.getBoundingClientRect();
@@ -467,16 +412,21 @@ timeSlider.addEventListener('mouseleave', () => {
     timePreview.classList.remove('visible');
 });
 
-
-
 fullscreenBtn.addEventListener('click', (e) => {
-    // This will work because click is a trusted user gesture
     e.preventDefault();
+    e.stopPropagation();
+    
+    if (!isFullscreenSupported()) {
+        console.warn('Fullscreen is not supported in this environment');
+        return;
+    }
+    
     toggleFullscreen();
 });
 
 mediaPlayer.addEventListener('dblclick', (e) => {
     e.preventDefault();
+    e.stopPropagation(); 
     toggleFullscreen();
 });
 
@@ -516,9 +466,29 @@ function toggleShuffle() {
 
 
 function toggleLoop() {
-    isLooping = !isLooping;
-    loopBtn.style.opacity = isLooping ? '1' : '0.5';
-    mediaPlayer.loop = isLooping;
+    // Cycle through states: No Loop -> Loop Playlist -> Loop Current
+    if (!isLooping && !isLoopingCurrent) {
+        // Enable playlist loop
+        isLoopingCurrent = false;
+        isLooping = true;
+        mediaPlayer.loop = false;
+        loopBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"></path><path d="M3 11v-1a4 4 0 014-4h14"></path><path d="M7 22l-4-4 4-4"></path><path d="M21 13v1a4 4 0 01-4 4H3"></path></svg>`;
+        loopBtn.style.opacity = '1';
+    } else if (isLooping) {
+        // Enable single media loop
+        isLoopingCurrent = true;
+        isLooping = false;
+        mediaPlayer.loop = true;
+        loopBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-repeat-1"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/><path d="M11 10h1v4"/></svg>`;
+        loopBtn.style.opacity = '1';
+    } else {
+        // Disable all looping
+        isLoopingCurrent = false;
+        isLooping = false;
+        mediaPlayer.loop = false;
+        loopBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"></path><path d="M3 11v-1a4 4 0 014-4h14"></path><path d="M7 22l-4-4 4-4"></path><path d="M21 13v1a4 4 0 01-4 4H3"></path></svg>`;
+        loopBtn.style.opacity = '0.5';
+    }
 }
 
 function changePlaybackSpeed() {
@@ -614,6 +584,70 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+const SUPPORTED_FORMATS = [
+    '.mp4', '.mkv', '.webm', '.mov', '.m4v', '.3gp', '.wmv',
+    '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
+];
+
+async function getMediaFilesFromFolder(folderPath) {
+    const mediaFiles = [];
+    
+    async function scan(dir) {
+        const files = await fs.readdir(dir);
+        
+        for (const file of files) {
+            const filePath = path.join(dir, file);
+            const stat = await fs.stat(filePath);
+            
+            if (stat.isDirectory()) {
+                await scan(filePath);
+            } else {
+                const ext = path.extname(filePath).toLowerCase();
+                if (SUPPORTED_FORMATS.includes(ext)) {
+                    mediaFiles.push(filePath);
+                }
+            }
+        }
+    }
+    
+    await scan(folderPath);
+    return mediaFiles;
+}
+
+// Add new function to handle opening folder
+async function openFolder() {
+    const result = await ipcRenderer.invoke('open-folder');
+    if (!result || !result.filePaths || result.filePaths.length === 0) return;
+    
+    const folderPath = result.filePaths[0];
+    try {
+        const mediaFiles = await getMediaFilesFromFolder(folderPath);
+        
+        if (mediaFiles.length === 0) {
+            alert('No supported media files found in the selected folder.');
+            return;
+        }
+        
+        // Add files with basic info first
+        const promises = mediaFiles.map(addToPlaylist);
+        
+        if (currentIndex === -1) {
+            currentIndex = 0;
+            playFile(mediaFiles[0]);
+        }
+        
+        // Save playlist after basic info is added
+        store.set('playlist', playlist);
+        
+        await Promise.allSettled(promises);
+        store.set('playlist', playlist); // Update with complete metadata
+        
+    } catch (error) {
+        console.error('Error scanning folder:', error);
+        alert('Error scanning folder for media files.');
+    }
+}
+
 async function openFiles() {
     const filePaths = await ipcRenderer.invoke('open-files');
     if (!filePaths || filePaths.length === 0) return;
@@ -629,7 +663,6 @@ async function openFiles() {
     // Save playlist after basic info is added
     store.set('playlist', playlist);
 
-    // Wait for metadata in background
     await Promise.allSettled(promises);
     store.set('playlist', playlist); // Update with complete metadata
 }
@@ -640,7 +673,6 @@ async function addToPlaylist(filePath) {
         path: filePath,
         metadata: {
             title: path.basename(filePath),
-            artist: 'Unknown Artist',
             duration: 0
         }
     };
@@ -665,7 +697,7 @@ async function addToPlaylist(filePath) {
         updatePlaylistUI();
         temp.remove();
         
-        // Optional: Load full metadata in background
+        // Load full metadata in background
         parseFile(filePath).then(metadata => {
             playlist[index].metadata.title = metadata.common.title || path.basename(filePath);
             playlist[index].metadata.artist = metadata.common.artist || 'Unknown Artist';
@@ -681,7 +713,7 @@ async function addToPlaylist(filePath) {
 function updatePlaylistUI() {
     playlistElement.innerHTML = '';
     
-    // Add a container for playlist items
+    // Add container for playlist items
     const playlistContainer = document.createElement('div');
     playlistContainer.className = 'playlist-container';
     
@@ -725,7 +757,7 @@ function updatePlaylistUI() {
 
     playlistElement.appendChild(playlistContainer);
 
-    // Add container-level drag events
+    // Container-level drag events
     playlistContainer.addEventListener('dragover', handleDragOver);
     playlistContainer.addEventListener('drop', handleDrop);
 }
@@ -831,7 +863,6 @@ function handleDrop(e) {
         currentIndex++;
     }
     
-    // Update UI and save
     updatePlaylistUI();
     store.set('playlist', playlist);
 }
@@ -848,27 +879,12 @@ async function playFile(filePath) {
     mediaPlayer.removeAttribute('src');
     mediaPlayer.load();
 
-    if (isHardwareAccelerated) {
-        // Enable hardware acceleration hints
-        mediaPlayer.style.transform = 'translate3d(0,0,0)'; // Force GPU layer
-        mediaPlayer.style.willChange = 'transform';
-        mediaPlayer.style.backfaceVisibility = 'hidden';
-        
-        // Enable hardware decoding
-        mediaPlayer.setAttribute('x-webkit-airplay', 'allow');
-        mediaPlayer.setAttribute('webkit-playsinline', '');
-        mediaPlayer.setAttribute('playsinline', '');
-        mediaPlayer.setAttribute('decode', 'async');
-        
-        // Force video rendering to happen on GPU
-        mediaPlayer.style.position = 'relative';
-        mediaPlayer.style.zIndex = '1';
-        
-        // Add specific codec hints
-        if (filePath.toLowerCase().endsWith('.mp4')) {
-            mediaPlayer.setAttribute('type', 'video/mp4; codecs="avc1.42E01E"');
-        }
+    if (hardwareAcceleration.isEnabled()) {
+        hardwareAcceleration.addCodecSupport(filePath);
     }
+
+    updatePlaylistUI();
+    updateWindowTitle();
 
     const extension = path.extname(filePath).toLowerCase();
     const mimeTypes = {
@@ -890,9 +906,6 @@ async function playFile(filePath) {
         mediaPlayer.src = filePath;
     }
 
-    // Add performance monitoring
-    
-
     mediaPlayer.src = filePath;
     
     // Detect and load subtitles for the new file
@@ -904,86 +917,8 @@ async function playFile(filePath) {
     const lastPosition = shouldRememberPlayback ? getLastPosition(filePath) : null;
 
     if (lastPosition && lastPosition.position > MINIMUM_POSITION) {
-        // Create resume dialog
-        const shouldResume = await new Promise(resolve => {
-            const dialog = document.createElement('div');
-            dialog.className = 'resume-dialog';
-
-            dialog.dataset.filePath = filePath;
-
-            dialog.innerHTML = `
-                <div class="resume-content">
-                    <p>Resume from ${formatTime(lastPosition.position)}?</p>
-                    <div class="resume-buttons">
-                        <button class="resume-yes">Yes</button>
-                        <button class="resume-no">No</button>
-                    </div>
-                </div>
-            `;
-
-            const cleanupDialog = () => {
-                // Only remove if this dialog is for the current file
-                if (dialog.dataset.filePath === filePath) {
-                    dialog.remove();
-                }
-            };
-            
-            // Add dialog styles if not already in stylesheet
-            const style = document.createElement('style');
-            style.textContent = `
-                .resume-dialog {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    background: rgba(0, 0, 0, 0.9);
-                    padding: 20px;
-                    border-radius: 8px;
-                    z-index: 1000;
-                }
-                .resume-content {
-                    color: white;
-                    text-align: center;
-                }
-                .resume-buttons {
-                    display: flex;
-                    gap: 10px;
-                    justify-content: center;
-                    margin-top: 10px;
-                }
-                .resume-buttons button {
-                    padding: 5px 15px;
-                    border: 1px solid rgba(255, 255, 255, 0.05);
-                    border-radius: 4px;
-                    cursor: pointer;
-                    background: rgba(255, 255, 255, 0.03);
-                    color: white;
-                }
-                .resume-buttons button:hover {
-                    background: rgba(255, 255, 255, 0.06);
-                    border: 1px solid var(--primary-color);
-                }
-            `;
-            document.head.appendChild(style);
-            
-            document.getElementById('player-container').appendChild(dialog);
-            
-            // Handle user choice
-            dialog.querySelector('.resume-yes').onclick = () => {
-                cleanupDialog();
-                resolve(true);
-            };
-            dialog.querySelector('.resume-no').onclick = () => {
-                cleanupDialog();
-                resolve(false);
-            };
-            
-            // Auto-hide dialog after 10 seconds and start from beginning
-            setTimeout(() => {
-                cleanupDialog();
-                resolve(false);
-            }, 10000);
-        });
+        // Resume dialog
+        const shouldResume = await showResumeDialog(filePath, lastPosition.position);
         
         if (shouldResume) {
             mediaPlayer.currentTime = lastPosition.position;
@@ -997,7 +932,7 @@ async function playFile(filePath) {
 
     const playPromise = new Promise((resolve, reject) => {
         const onPlaying = () => {
-            if (isHardwareAccelerated) {
+            if (hardwareAcceleration) {
                 // Check if video is actually playing with hardware acceleration
                 if (mediaPlayer.videoTracks && mediaPlayer.videoTracks.length > 0) {
                     const videoTrack = mediaPlayer.videoTracks[0];
@@ -1019,7 +954,6 @@ async function playFile(filePath) {
         mediaPlayer.addEventListener('error', onError, { once: true });
     });
 
-    
     try {
         await mediaPlayer.play();
         updatePlayPauseIcon(false);
@@ -1035,8 +969,65 @@ async function playFile(filePath) {
             alert('Error playing file. The file may be invalid or unsupported.');
         }
     }
-    updatePlaylistUI();
-    updateWindowTitle();
+}
+
+// Helper function to show resume dialog
+function showResumeDialog(filePath, position) {
+    return new Promise(resolve => {
+        // Clean up any existing dialog
+        if (activeDialog) {
+            activeDialog.remove();
+            if (activeResumeTimer) {
+                clearTimeout(activeResumeTimer);
+            }
+        }
+
+        const template = document.getElementById('resume-dialog-template');
+        const dialog = template.content.cloneNode(true).firstElementChild;
+        dialog.dataset.filePath = filePath;
+        activeDialog = dialog;
+
+        const timeElement = dialog.querySelector('.resume-time');
+        timeElement.textContent = formatTime(position);
+
+        let timeLeft = 10;
+        const countdownElement = dialog.querySelector('.countdown');
+        countdownElement.textContent = `Auto-starting from beginning in ${timeLeft}s`;
+
+        const countdownInterval = setInterval(() => {
+            timeLeft--;
+            countdownElement.textContent = `Auto-starting from beginning in ${timeLeft}s`;
+        }, 1000);
+
+        const cleanupDialog = () => {
+            clearInterval(countdownInterval);
+            if (activeResumeTimer) {
+                clearTimeout(activeResumeTimer);
+                activeResumeTimer = null;
+            }
+            dialog.remove();
+            activeDialog = null;
+        };
+
+        document.getElementById('player-container').appendChild(dialog);
+
+        // Handle user choice
+        dialog.querySelector('.resume-yes').onclick = () => {
+            cleanupDialog();
+            resolve(true);
+        };
+        
+        dialog.querySelector('.resume-no').onclick = () => {
+            cleanupDialog();
+            resolve(false);
+        };
+
+        // Auto-hide dialog after 10 seconds
+        activeResumeTimer = setTimeout(() => {
+            cleanupDialog();
+            resolve(false);
+        }, 10000);
+    });
 }
 
 function updatePlayPauseIcon(isPaused) {
@@ -1118,14 +1109,11 @@ mediaPlayer.addEventListener('play', () => {
 mediaPlayer.addEventListener('wheel', (e) => {
     e.preventDefault();
     
-    const volumeChange = e.deltaY > 0 ? -0.10 : 0.10;
+    const volumeChange = e.deltaY > 0 ? -0.05 : 0.05;
     const newVolume = Math.max(0, Math.min(1, mediaPlayer.volume + volumeChange));
     
-    // Update media player volume
     mediaPlayer.volume = newVolume;
-    // Update slider value
     volumeSlider.value = newVolume * 100;
-    // Update the volume-percent CSS variable for visual feedback
     volumeSlider.style.setProperty('--volume-percent', newVolume * 100);
     
     lastVolume = newVolume;
@@ -1185,44 +1173,52 @@ function toggleMute() {
 }
 
 function toggleFullscreen() {
-    const isCurrentlyFullscreen = !!document.fullscreenElement;
+    // Check if we're already in fullscreen
+    const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement
+    );
 
     try {
         if (!isCurrentlyFullscreen) {
-            // Request fullscreen with error handling
-            const fullscreenPromise = playerContainer.requestFullscreen();
-            if (fullscreenPromise) {
-                fullscreenPromise.catch(err => {
-                    console.warn('Fullscreen request failed:', err);
-                    // Fallback for some browsers
-                    if (playerContainer.webkitRequestFullscreen) {
-                        playerContainer.webkitRequestFullscreen();
-                    } else if (playerContainer.mozRequestFullScreen) {
-                        playerContainer.mozRequestFullScreen();
-                    } else if (playerContainer.msRequestFullscreen) {
-                        playerContainer.msRequestFullscreen();
-                    }
-                });
+            // Define all possible fullscreen request methods
+            const requestFullscreen = playerContainer.requestFullscreen ||
+                playerContainer.webkitRequestFullscreen;
+
+            if (requestFullscreen) {
+                Promise.resolve(requestFullscreen.call(playerContainer))
+                    .then(() => {
+                        isFullscreen = true;
+                        ipcRenderer.send('toggle-menu-bar', false);
+                        showControls();
+                        fullscreenBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"></path><path d="M21 8h-3a2 2 0 0 1-2-2V3"></path><path d="M3 16h3a2 2 0 0 1 2 2v3"></path><path d="M16 21v-3a2 2 0 0 1 2-2h3"></path></svg>`;
+                    })
+                    .catch(err => {
+                        console.warn('Fullscreen request failed:', err);
+                        // Try alternative methods if the primary method fails
+                        if (playerContainer.webkitRequestFullscreen) {
+                            playerContainer.webkitRequestFullscreen();
+                        }
+                    });
             }
-            
-            ipcRenderer.send('toggle-menu-bar', false);
-            isFullscreen = true;
-            showControls();
         } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            } else if (document.webkitExitFullscreen) {
-                document.webkitExitFullscreen();
-            } else if (document.mozCancelFullScreen) {
-                document.mozCancelFullScreen();
-            } else if (document.msExitFullscreen) {
-                document.msExitFullscreen();
+            // Define all possible exit fullscreen methods
+            const exitFullscreen = document.exitFullscreen ||
+                document.webkitExitFullscreen;
+
+            if (exitFullscreen) {
+                Promise.resolve(exitFullscreen.call(document))
+                    .then(() => {
+                        isFullscreen = false;
+                        ipcRenderer.send('toggle-menu-bar', true);
+                        clearTimeout(controlsTimeout);
+                        showControls();
+                        fullscreenBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>`;
+                    })
+                    .catch(err => {
+                        console.warn('Exit fullscreen failed:', err);
+                    });
             }
-            
-            ipcRenderer.send('toggle-menu-bar', true);
-            isFullscreen = false;
-            clearTimeout(controlsTimeout);
-            showControls();
         }
     } catch (error) {
         console.error('Error toggling fullscreen:', error);
@@ -1245,13 +1241,29 @@ document.getElementById('controls-overlay').addEventListener('mouseleave', () =>
         controlsTimeout = setTimeout(hideControls, INACTIVITY_TIMEOUT);
 });
 
-document.addEventListener('fullscreenchange', () => {
-    isFullscreen = !!document.fullscreenElement;
+document.addEventListener('fullscreenchange', handleFullscreenChange);
+document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+
+function handleFullscreenChange() {
+    isFullscreen = !!(
+        document.fullscreenElement ||
+        document.webkitFullscreenElement
+    );
     
     if (!isFullscreen) {
-        ipcRenderer.send('toggle-menu-bar', true); // Add this line to show menu bar
+        ipcRenderer.send('toggle-menu-bar', true);
+        clearTimeout(controlsTimeout);
+        showControls();
     }
-});
+}
+
+function isFullscreenSupported() {
+    return !!(
+        document.fullscreenEnabled ||
+        document.webkitFullscreenEnabled
+    );
+}
 
 function playNext() {
     if (playlist.length === 0) return;
@@ -1342,21 +1354,33 @@ function handleMediaEnd() {
         removeLastPosition(playlist[currentIndex].path);
     }
     
-    if (isLooping) {
+    if (isLoopingCurrent) {
+        // Single media loop - just play the current file again
         mediaPlayer.play();
-    } else if (playlist.length > 0) {
+    } else if (isLooping) {
+        // Playlist loop - continue with next file or return to start
         if (isShuffling) {
-            // When shuffling, always play next
             playNext();
         } else {
-            // When not shuffling, only play next if we're not at the end
             if (currentIndex < playlist.length - 1) {
                 playNext();
             } else {
-                // At the end of playlist and not shuffling - stop playback
+                // At end of playlist, return to start
+                currentIndex = 0;
+                playFile(playlist[currentIndex].path);
+            }
+        }
+    } else if (playlist.length > 0) {
+        // No loop - normal playlist behavior
+        if (isShuffling) {
+            playNext();
+        } else {
+            if (currentIndex < playlist.length - 1) {
+                playNext();
+            } else {
+                // At the end of playlist and not looping - stop playback
                 mediaPlayer.pause();
                 updatePlayPauseIcon(true);
-                // Optionally reset to start of current video
                 mediaPlayer.currentTime = 0;
             }
         }
@@ -1387,37 +1411,19 @@ function formatTime(seconds) {
     }
 }
 
-
 clearPlaylistBtn.addEventListener('click', () => {
     if (playlist.length > 0) {
         clearPlaylist();
     }
 });
 
-function checkHardwareAccelerationSupport() {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    
-    if (!gl) {
-        console.warn('WebGL not supported - hardware acceleration may be limited');
-        return false;
-    }
-
-    // Check for video texture support
-    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-    if (debugInfo) {
-        const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-        console.log('Graphics hardware:', renderer);
-    }
-
-    return true;
-}
 
 // IPC Events
 ipcRenderer.on('change-theme', (_, themeName) => {
     applyTheme(themeName);
 });
 ipcRenderer.on('menu-open-files', openFiles);
+ipcRenderer.on('menu-open-folder', openFolder);
 ipcRenderer.on('menu-play-pause', togglePlayPause);
 ipcRenderer.on('menu-previous', playPrevious);
 ipcRenderer.on('menu-next', playNext);
@@ -1426,12 +1432,10 @@ ipcRenderer.on('menu-fullscreen', toggleFullscreen);
 ipcRenderer.on('toggle-remember-playback', (_, enabled) => {
     store.set('rememberPlayback', enabled);
 });
-
 ipcRenderer.on('toggle-hardware-acceleration', (_, enabled) => {
     toggleHardwareAcceleration(enabled);
     store.set('hardwareAcceleration', enabled);
 });
-
 ipcRenderer.on('file-opened', async (_, filePath) => {
     // Clear playlist if it's empty or if it's a fresh start
     if (playlist.length === 0 || currentIndex === -1) {
@@ -1453,19 +1457,15 @@ ipcRenderer.on('file-opened', async (_, filePath) => {
 // Initialize hardware acceleration state when player loads
 document.addEventListener('DOMContentLoaded', async () => {
     // Check hardware support
-    const hasHardwareSupport = checkHardwareAccelerationSupport();
+    const hasHardwareSupport = hardwareAcceleration.checkSupport();
     
     // If no hardware support, force disable regardless of stored setting
     if (!hasHardwareSupport) {
-        isHardwareAccelerated = false;
-        store.set('hardwareAcceleration', false);
+        hardwareAcceleration.toggle(false);
     } else {
-        // Load saved setting from store
-        isHardwareAccelerated = store.get('hardwareAcceleration', true);
+        // Initialize with current state
+        hardwareAcceleration.toggle(hardwareAcceleration.isEnabled());
     }
-    
-    // Initialize hardware acceleration state
-    toggleHardwareAcceleration(isHardwareAccelerated);
 });
 
 // Drag and drop support
@@ -1523,20 +1523,10 @@ mediaPlayer.addEventListener('error', (e) => {
 });
 
 mediaPlayer.addEventListener('error', (e) => {
-    if (e.target.error && isHardwareAccelerated) {
-        const errorCode = e.target.error.code;
-        // Check for common hardware acceleration related errors
-        if (errorCode === MediaError.MEDIA_ERR_DECODE || 
-            errorCode === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
-            console.warn('Possible hardware acceleration error, falling back to software decoding');
-            toggleHardwareAcceleration(false);
-            
-            // Retry playback if we have a current file
-            if (currentIndex !== -1 && playlist[currentIndex]) {
-                playFile(playlist[currentIndex].path);
-            }
-        }
-    }
+    hardwareAcceleration.handleError(e.target.error, 
+        currentIndex !== -1 ? playlist[currentIndex].path : null,
+        (path) => playFile(path)
+    );
 });
 
 // Save playlist before window closes

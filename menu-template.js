@@ -17,6 +17,11 @@ const createMenuTemplate = (mainWindow) => [
                 click: () => mainWindow.webContents.send('menu-open-files')
             },
             {
+                label: 'Open Folder',
+                accelerator: 'CmdOrCtrl+Shift+O',
+                click: () => mainWindow.webContents.send('menu-open-folder')
+            },
+            {
                 label: 'Clear Playlist',
                 accelerator: 'CmdOrCtrl+Shift+C',
                 click: () => mainWindow.webContents.send('menu-clear-playlist')
@@ -226,7 +231,7 @@ const createMenuTemplate = (mainWindow) => [
                 click: () => {
                     dialog.showMessageBox(mainWindow, {
                         title: 'Keyboard Shortcuts',
-                        message: 'Space: Play/Pause\nF: Toggle Fullscreen\nCtrl+O: Open Files\nCtrl+Shift+S: Load Subtitles\nCtrl+Shift+V: Toggle Subtitles\nCtrl+Left: Previous\nCtrl+Right: Next',
+                        message: 'Space: Play/Pause\nF: Toggle Fullscreen\nCtrl+O: Open Files\nCtrl+Shift+O: Open Folder\nCtrl+Left: Previous\nCtrl+Right: Next',
                         buttons: ['OK']
                     });
                 }
