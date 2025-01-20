@@ -199,6 +199,8 @@ class SubtitlesManager {
         this.mediaPlayer.addEventListener('loadeddata', () => {
             this.disableAllTextTracks();
         });
+
+        this.updateSubtitleStyle();
     }
 
     
@@ -687,7 +689,7 @@ class SubtitlesManager {
         if (this.subtitleCache.has(filePath)) {
             return this.subtitleCache.get(filePath);
         }
-
+    
         try {
             const ext = path.extname(filePath).toLowerCase();
             
@@ -700,13 +702,20 @@ class SubtitlesManager {
                 this.subtitleCache.set(filePath, url);
                 return url;
             }
-
-            // Handle other formats using existing srt2vtt
+    
+            // Handle other formats with proper line breaks
             return new Promise((resolve, reject) => {
                 const chunks = [];
+                let currentText = '';
+                
                 createReadStream(filePath)
                     .pipe(srt2vtt())
-                    .on('data', chunk => chunks.push(chunk))
+                    .on('data', chunk => {
+                        currentText += chunk.toString();
+                        // Process the text to ensure proper line breaks
+                        const processedText = currentText.replace(/([^.\n!?]+[.!?])\s+(?=[A-Z])/g, '$1\n');
+                        chunks.push(Buffer.from(processedText));
+                    })
                     .on('end', () => {
                         const blob = new Blob(chunks, { type: 'text/vtt' });
                         const url = URL.createObjectURL(blob);
@@ -722,7 +731,6 @@ class SubtitlesManager {
     }
 
     async ttmlToVTT(ttmlContent) {
-        // Basic TTML to VTT converter
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(ttmlContent, 'text/xml');
         const paragraphs = xmlDoc.getElementsByTagName('p');
@@ -733,14 +741,102 @@ class SubtitlesManager {
             const p = paragraphs[i];
             const begin = this.convertTTMLTime(p.getAttribute('begin'));
             const end = this.convertTTMLTime(p.getAttribute('end'));
-            const text = p.textContent;
             
-            if (begin && end && text) {
-                vttContent += `${begin} --> ${end}\n${text}\n\n`;
+            if (begin && end) {
+                // Get the text content while preserving line breaks
+                let text = this.extractTTMLText(p);
+                // Add additional line breaks at punctuation
+                text = this.addPunctuationBreaks(text);
+                
+                if (text) {
+                    vttContent += `${begin} --> ${end}\n${text}\n\n`;
+                }
             }
         }
         
         return vttContent;
+    }
+    
+    extractTTMLText(element) {
+        let text = '';
+        
+        // Process all child nodes
+        for (const node of element.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                // Text node - add its content
+                text += node.textContent.trim();
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                if (node.tagName.toLowerCase() === 'br') {
+                    // <br> tag - add a line break
+                    text += '\n';
+                } else if (node.tagName.toLowerCase() === 'span') {
+                    // <span> tag - process its content
+                    text += this.extractTTMLText(node);
+                }
+            }
+        }
+        
+        // Clean up multiple consecutive line breaks and spaces
+        return text
+            .replace(/\n\s+/g, '\n')  // Remove spaces after line breaks
+            .replace(/\s+\n/g, '\n')  // Remove spaces before line breaks
+            .replace(/\n+/g, '\n')    // Collapse multiple line breaks
+            .replace(/\s+/g, ' ')     // Collapse multiple spaces
+            .trim();
+    }
+
+    addPunctuationBreaks(text) {
+        // Split the text into existing lines
+        const lines = text.split('\n');
+        
+        // Process each line
+        return lines.map(line => {
+            return line
+                // Break at periods followed by a space and uppercase letter, 
+                // but not after common abbreviations or within numbers
+                .replace(/(?<!Mr|Mrs|Dr|Ms|vs|etc|[A-Z]|[0-9])\.(?=\s+[A-Z])/g, '.\n')
+                
+                // Break at question marks and exclamation marks followed by a space
+                .replace(/([?!])(?=\s+)/g, '$1\n')
+                
+                // Break at dashes between words (but not hyphenated words)
+                .replace(/\s-\s/g, '\n- ')
+                
+                // Break at semicolons between independent clauses
+                .replace(/;(?=\s+)/g, ';\n')
+                
+                // Break at colons introducing lists or explanations
+                .replace(/:(?=\s+)/g, ':\n');
+        }).join('\n');
+    }
+
+    formatSubtitleText(text) {
+        // Maximum characters per line (adjust as needed)
+        const maxCharsPerLine = 42;
+        
+        // Split text into words
+        const words = text.trim().split(/\s+/);
+        let currentLine = '';
+        let result = '';
+        
+        for (const word of words) {
+            // Check if adding this word would exceed the max length
+            if (currentLine.length + word.length + 1 > maxCharsPerLine) {
+                // Add current line to result and start a new line
+                result += (result ? '\n' : '') + currentLine.trim();
+                currentLine = word;
+            } else {
+                // Add word to current line
+                currentLine += (currentLine ? ' ' : '') + word;
+            }
+        }
+        
+        // Add the last line
+        if (currentLine) {
+            result += (result ? '\n' : '') + currentLine.trim();
+        }
+        
+        return result;
     }
 
     convertTTMLTime(ttmlTime) {
@@ -934,15 +1030,15 @@ class SubtitlesManager {
     }
 
     // Style management
-    updateSubtitleStyle(styles) {
+    updateSubtitleStyle() {
         const styleSheet = document.styleSheets[0];
-        const cueRule = Array.from(styleSheet.cssRules)
+        let cueRule = Array.from(styleSheet.cssRules)
             .find(rule => rule.selectorText === '::cue');
-
-        if (cueRule) {
-            Object.entries(styles).forEach(([property, value]) => {
-                cueRule.style[property] = value;
-            });
+        
+        if (!cueRule) {
+            styleSheet.insertRule('::cue { white-space: pre-line; }', styleSheet.cssRules.length);
+        } else {
+            cueRule.style.whiteSpace = 'pre-line';
         }
     }
 }

@@ -1,6 +1,6 @@
 const { app, dialog } = require('electron');
 const { getCurrentTheme } = require('./src/themes');
-const RELEASE_NOTES = require('./release-notes');
+const { RELEASE_NOTES } = require('./release-notes');
 const { autoUpdater } = require('electron-updater');
 const Store = require('electron-store');
 const store = new Store();
@@ -172,20 +172,19 @@ const createMenuTemplate = (mainWindow) => [
                     let message = `Current Version: ${currentVersion}\n\nCurrent Release Notes:\n`;
                     
                     // Add current version's release notes
-                    if (RELEASE_NOTES[currentVersion]) {
+                    if (RELEASE_NOTES && RELEASE_NOTES[currentVersion]) {
                         message += '• ' + RELEASE_NOTES[currentVersion].join('\n• ') + '\n\n';
                     } else {
                         message += 'No release notes available for current version.\n\n';
                     }
                     
-                    // Check for updates and add new version's release notes if available
                     try {
                         const updateCheckResult = await autoUpdater.checkForUpdates();
                         if (updateCheckResult && updateCheckResult.updateInfo) {
                             const newVersion = updateCheckResult.updateInfo.version;
                             if (newVersion !== currentVersion) {
                                 message += `New Version Available: ${newVersion}\n\nNew Release Notes:\n`;
-                                if (RELEASE_NOTES[newVersion]) {
+                                if (RELEASE_NOTES && RELEASE_NOTES[newVersion]) {
                                     message += '• ' + RELEASE_NOTES[newVersion].join('\n• ') + '\n\n';
                                 } else if (updateCheckResult.updateInfo.releaseNotes) {
                                     message += updateCheckResult.updateInfo.releaseNotes + '\n\n';
@@ -193,7 +192,6 @@ const createMenuTemplate = (mainWindow) => [
                                     message += 'No release notes available for new version.\n\n';
                                 }
                                 
-                                // Show dialog with update option
                                 dialog.showMessageBox(mainWindow, {
                                     title: 'Release Notes',
                                     message: message,
@@ -208,7 +206,6 @@ const createMenuTemplate = (mainWindow) => [
                                     }
                                 });
                             } else {
-                                // Show dialog without update option if no new version
                                 dialog.showMessageBox(mainWindow, {
                                     title: 'Release Notes',
                                     message: message,
@@ -217,7 +214,7 @@ const createMenuTemplate = (mainWindow) => [
                             }
                         }
                     } catch (error) {
-                        // Show current release notes if update check fails
+                        console.error('Error checking for updates:', error);
                         dialog.showMessageBox(mainWindow, {
                             title: 'Release Notes',
                             message: message,

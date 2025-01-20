@@ -129,6 +129,25 @@ function createWindow() {
   mainWindow.loadFile('index.html');
 
   mainWindow.webContents.on('did-finish-load', () => {
+    // Check for pending update notification
+    const pendingUpdateVersion = store.get('pendingUpdateVersion');
+    if (pendingUpdateVersion) {
+      // Clear the pending update flag
+      store.delete('pendingUpdateVersion');
+      // Show the release notes
+      showPostUpdateReleaseNotes(pendingUpdateVersion);
+    }
+  
+    // Handle file opening (keep your existing code)
+    if (fileToOpen) {
+      setTimeout(() => {
+        mainWindow.webContents.send('file-opened', fileToOpen);
+        fileToOpen = null;
+      }, 500);
+    }
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
     if (fileToOpen) {
         // Short delay to ensure renderer is fully ready
         setTimeout(() => {
@@ -164,7 +183,6 @@ autoUpdater.on('update-available', (info) => {
   const version = info.version;
   let releaseNotes = 'No release notes available';
 
-  // First try to get notes from our local file
   const localNotes = getReleaseNotes(version);
   if (localNotes) {
     releaseNotes = localNotes;
@@ -200,7 +218,21 @@ autoUpdater.on('download-progress', (progressObj) => {
   mainWindow.webContents.send('update-progress', progressObj.percent);
 });
 
-autoUpdater.on('update-downloaded', () => {
+function showPostUpdateReleaseNotes(version) {
+  const releaseNotes = getReleaseNotes(version);
+  if (releaseNotes) {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'What\'s New',
+      message: `Updates in version ${version}`,
+      detail: releaseNotes,
+      buttons: ['OK'],
+      defaultId: 0
+    });
+  }
+}
+
+autoUpdater.on('update-downloaded', (info) => {
   dialog.showMessageBox(mainWindow, {
     type: 'info',
     title: 'Update Ready',
@@ -210,7 +242,9 @@ autoUpdater.on('update-downloaded', () => {
     cancelId: 1,
     defaultId: 1
   }).then((result) => {
-    if (result.response === 0) {  // Only install if 'Yes' is clicked
+    if (result.response === 0) {
+      // Store the version that's about to be installed
+      store.set('pendingUpdateVersion', info.version);
       autoUpdater.quitAndInstall(false, true);
     }
   });

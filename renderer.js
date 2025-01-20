@@ -1,10 +1,13 @@
 const { ipcRenderer } = require('electron');
 const { parseFile } = require('music-metadata');
-const fs = require('fs').promises;
 const path = require('path');
 const Store = new require('electron-store');
 const store = new Store();
+
 const { applyTheme, getCurrentTheme } = require('./src/themes');
+const { formatTime, debounce } = require('./src/utils');
+const { INACTIVITY_TIMEOUT, LAST_POSITIONS_KEY, MAX_STORED_POSITIONS, MINIMUM_DURATION, MINIMUM_POSITION, SEEK_UPDATE_INTERVAL, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, DOUBLE_CLICK_DELAY, supportedFormats, mimeTypes } = require('./src/constants');
+const { openFiles, openFolder } = require('./src/fileSystem')
 
 const HardwareAcceleration = require('./src/hardwareAccelerations');
 const SubtitlesManager = require('./subtitles');
@@ -28,33 +31,11 @@ let lastVolume = store.get('lastVolume', 0.5); // 50%
 let activeResumeTimer = null;
 let activeDialog = null;
 
-const doubleClickDelay = 300; // milliseconds
-const INACTIVITY_TIMEOUT = 3000; // 3 seconds
-const LAST_POSITIONS_KEY = 'lastPositions';
-const MAX_STORED_POSITIONS = 1000; // Limit number of stored positions to prevent excessive storage
-const MINIMUM_DURATION = 60; // Only store position for media longer than 1 minute
-const MINIMUM_POSITION = 30; // Only store position if user watched more than 30 seconds
-const SEEK_UPDATE_INTERVAL = 2.78; // ~360fps
 const rememberPlayback = store.get('rememberPlayback', true); // Default to true for existing users
-const MIN_WINDOW_WIDTH = 780;
-const MIN_WINDOW_HEIGHT = 580;
 
 document.addEventListener('DOMContentLoaded', () => {
     applyTheme(getCurrentTheme());
 });
-
-
-const debounce = (func, wait) => {
-    let timeout;
-    return function executedFunction(...args) {
-      const later = () => {
-        clearTimeout(timeout);
-        func(...args);
-      };
-      clearTimeout(timeout);
-      timeout = setTimeout(later, wait);
-    };
-  };
 
 // DOM Elements
 const mediaPlayer = document.getElementById('media-player');
@@ -201,7 +182,7 @@ mediaPlayer.addEventListener('click', (e) => {
                 togglePlayPause();
             }
             clickTimeout = null;
-        }, doubleClickDelay);
+        }, DOUBLE_CLICK_DELAY);
     } else {
         // This is a double click
         clearTimeout(clickTimeout);
@@ -563,10 +544,26 @@ document.addEventListener('keydown', (e) => {
         case 'ArrowUp':
             mediaPlayer.volume = Math.min(1, mediaPlayer.volume + 0.1);
             volumeSlider.value = mediaPlayer.volume * 100;
+            volumeSlider.style.setProperty('--volume-percent', volumeSlider.value);
+            lastVolume = mediaPlayer.volume;
+            store.set('lastVolume', lastVolume);
+            if (mediaPlayer.volume === 0) {
+                muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+            } else {
+                muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+            }
             break;
         case 'ArrowDown':
             mediaPlayer.volume = Math.max(0, mediaPlayer.volume - 0.1);
             volumeSlider.value = mediaPlayer.volume * 100;
+            volumeSlider.style.setProperty('--volume-percent', volumeSlider.value);
+            lastVolume = mediaPlayer.volume;
+            store.set('lastVolume', lastVolume);
+            if (mediaPlayer.volume === 0) {
+                muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+            } else {
+                muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+            }
             break;
         case 'KeyM':
             toggleMute();
@@ -584,88 +581,6 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-const SUPPORTED_FORMATS = [
-    '.mp4', '.mkv', '.webm', '.mov', '.m4v', '.3gp', '.wmv',
-    '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
-];
-
-async function getMediaFilesFromFolder(folderPath) {
-    const mediaFiles = [];
-    
-    async function scan(dir) {
-        const files = await fs.readdir(dir);
-        
-        for (const file of files) {
-            const filePath = path.join(dir, file);
-            const stat = await fs.stat(filePath);
-            
-            if (stat.isDirectory()) {
-                await scan(filePath);
-            } else {
-                const ext = path.extname(filePath).toLowerCase();
-                if (SUPPORTED_FORMATS.includes(ext)) {
-                    mediaFiles.push(filePath);
-                }
-            }
-        }
-    }
-    
-    await scan(folderPath);
-    return mediaFiles;
-}
-
-// Add new function to handle opening folder
-async function openFolder() {
-    const result = await ipcRenderer.invoke('open-folder');
-    if (!result || !result.filePaths || result.filePaths.length === 0) return;
-    
-    const folderPath = result.filePaths[0];
-    try {
-        const mediaFiles = await getMediaFilesFromFolder(folderPath);
-        
-        if (mediaFiles.length === 0) {
-            alert('No supported media files found in the selected folder.');
-            return;
-        }
-        
-        // Add files with basic info first
-        const promises = mediaFiles.map(addToPlaylist);
-        
-        if (currentIndex === -1) {
-            currentIndex = 0;
-            playFile(mediaFiles[0]);
-        }
-        
-        // Save playlist after basic info is added
-        store.set('playlist', playlist);
-        
-        await Promise.allSettled(promises);
-        store.set('playlist', playlist); // Update with complete metadata
-        
-    } catch (error) {
-        console.error('Error scanning folder:', error);
-        alert('Error scanning folder for media files.');
-    }
-}
-
-async function openFiles() {
-    const filePaths = await ipcRenderer.invoke('open-files');
-    if (!filePaths || filePaths.length === 0) return;
-
-    // Add files with basic info first
-    const promises = filePaths.map(addToPlaylist);
-
-    if (currentIndex === -1) {
-        currentIndex = 0;
-        playFile(filePaths[0]);
-    }
-
-    // Save playlist after basic info is added
-    store.set('playlist', playlist);
-
-    await Promise.allSettled(promises);
-    store.set('playlist', playlist); // Update with complete metadata
-}
 
 async function addToPlaylist(filePath) {
     // Get basic file info immediately
@@ -887,15 +802,6 @@ async function playFile(filePath) {
     updateWindowTitle();
 
     const extension = path.extname(filePath).toLowerCase();
-    const mimeTypes = {
-        '.mp4': 'video/mp4',
-        '.webm': 'video/webm',
-        '.mkv': ['video/x-matroska', 'video/mkv', 'application/x-matroska'],
-        '.mov': 'video/quicktime',
-        '.H265': 'video/H265',
-        '.mpeg': 'video/mpeg',
-        '.raw': 'video/raw'
-    };
     
     if (mimeTypes[extension]) {
         const source = document.createElement('source');
@@ -1397,20 +1303,6 @@ function updateWindowTitle() {
         `${playlist[currentIndex].metadata.title} - Fury`;
 }
 
-function formatTime(seconds) {
-    if (!seconds || isNaN(seconds)) return '00:00';
-    
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-    
-    if (hours > 0) {
-        return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    } else {
-        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-}
-
 clearPlaylistBtn.addEventListener('click', () => {
     if (playlist.length > 0) {
         clearPlaylist();
@@ -1477,14 +1369,6 @@ document.addEventListener('dragover', (e) => {
 document.addEventListener('drop', async (e) => {
     e.preventDefault();
     e.stopPropagation();
-
-    const supportedFormats = [
-        // Video
-        '.mp4', '.mkv', '.avi', '.webm', '.mov', '.flv', '.m4v', '.3gp', '.wmv',
-        // Audio
-        '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
-      ];
-    
 
     const files = Array.from(e.dataTransfer.files)
       .filter(file => {
