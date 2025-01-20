@@ -689,7 +689,7 @@ class SubtitlesManager {
         if (this.subtitleCache.has(filePath)) {
             return this.subtitleCache.get(filePath);
         }
-    
+
         try {
             const ext = path.extname(filePath).toLowerCase();
             
@@ -702,20 +702,13 @@ class SubtitlesManager {
                 this.subtitleCache.set(filePath, url);
                 return url;
             }
-    
-            // Handle other formats with proper line breaks
+
+            // Handle other formats using existing srt2vtt
             return new Promise((resolve, reject) => {
                 const chunks = [];
-                let currentText = '';
-                
                 createReadStream(filePath)
                     .pipe(srt2vtt())
-                    .on('data', chunk => {
-                        currentText += chunk.toString();
-                        // Process the text to ensure proper line breaks
-                        const processedText = currentText.replace(/([^.\n!?]+[.!?])\s+(?=[A-Z])/g, '$1\n');
-                        chunks.push(Buffer.from(processedText));
-                    })
+                    .on('data', chunk => chunks.push(chunk))
                     .on('end', () => {
                         const blob = new Blob(chunks, { type: 'text/vtt' });
                         const url = URL.createObjectURL(blob);
@@ -745,7 +738,6 @@ class SubtitlesManager {
             if (begin && end) {
                 // Get the text content while preserving line breaks
                 let text = this.extractTTMLText(p);
-                // Add additional line breaks at punctuation
                 text = this.addPunctuationBreaks(text);
                 
                 if (text) {
@@ -756,7 +748,7 @@ class SubtitlesManager {
         
         return vttContent;
     }
-    
+
     extractTTMLText(element) {
         let text = '';
         
@@ -808,35 +800,6 @@ class SubtitlesManager {
                 // Break at colons introducing lists or explanations
                 .replace(/:(?=\s+)/g, ':\n');
         }).join('\n');
-    }
-
-    formatSubtitleText(text) {
-        // Maximum characters per line (adjust as needed)
-        const maxCharsPerLine = 42;
-        
-        // Split text into words
-        const words = text.trim().split(/\s+/);
-        let currentLine = '';
-        let result = '';
-        
-        for (const word of words) {
-            // Check if adding this word would exceed the max length
-            if (currentLine.length + word.length + 1 > maxCharsPerLine) {
-                // Add current line to result and start a new line
-                result += (result ? '\n' : '') + currentLine.trim();
-                currentLine = word;
-            } else {
-                // Add word to current line
-                currentLine += (currentLine ? ' ' : '') + word;
-            }
-        }
-        
-        // Add the last line
-        if (currentLine) {
-            result += (result ? '\n' : '') + currentLine.trim();
-        }
-        
-        return result;
     }
 
     convertTTMLTime(ttmlTime) {

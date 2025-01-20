@@ -5,7 +5,6 @@ const Store = require('electron-store');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const createMenuTemplate = require('./menu-template');
-const { RELEASE_NOTES, getReleaseNotes } = require('./release-notes');
 const store = new Store();
 const isHardwareAccelerated = store.get('hardwareAcceleration', true);
 
@@ -183,17 +182,27 @@ autoUpdater.on('update-available', (info) => {
   const version = info.version;
   let releaseNotes = 'No release notes available';
 
-  const localNotes = getReleaseNotes(version);
-  if (localNotes) {
-    releaseNotes = localNotes;
-  }
-  // If no local notes, try to get them from the update info
-  else if (info.releaseNotes) {
+  if (info.releaseNotes) {
     if (typeof info.releaseNotes === 'string') {
-      releaseNotes = info.releaseNotes;
+      releaseNotes = info.releaseNotes
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
     } else if (Array.isArray(info.releaseNotes)) {
       releaseNotes = info.releaseNotes
-        .map((note) => `${note.version}\n${note.note}`)
+        .map((note) => {
+          const cleanNote = note.note
+            .replace(/<[^>]*>/g, '')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+          return `${note.version}\n${cleanNote}`;
+        })
         .join('\n\n');
     }
   }
@@ -214,13 +223,23 @@ autoUpdater.on('update-available', (info) => {
   });
 });
 
+
 autoUpdater.on('download-progress', (progressObj) => {
   mainWindow.webContents.send('update-progress', progressObj.percent);
 });
 
 function showPostUpdateReleaseNotes(version) {
-  const releaseNotes = getReleaseNotes(version);
+  let releaseNotes = getReleaseNotes(version);
   if (releaseNotes) {
+    // Clean up HTML tags and entities
+    releaseNotes = releaseNotes
+      .replace(/<[^>]*>/g, '')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+
     dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: 'What\'s New',
@@ -243,8 +262,6 @@ autoUpdater.on('update-downloaded', (info) => {
     defaultId: 1
   }).then((result) => {
     if (result.response === 0) {
-      // Store the version that's about to be installed
-      store.set('pendingUpdateVersion', info.version);
       autoUpdater.quitAndInstall(false, true);
     }
   });

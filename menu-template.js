@@ -166,64 +166,6 @@ const createMenuTemplate = (mainWindow) => [
                 }
             },
             {
-                label: 'Release Notes',
-                click: async () => {
-                    const currentVersion = app.getVersion();
-                    let message = `Current Version: ${currentVersion}\n\nCurrent Release Notes:\n`;
-                    
-                    // Add current version's release notes
-                    if (RELEASE_NOTES && RELEASE_NOTES[currentVersion]) {
-                        message += '• ' + RELEASE_NOTES[currentVersion].join('\n• ') + '\n\n';
-                    } else {
-                        message += 'No release notes available for current version.\n\n';
-                    }
-                    
-                    try {
-                        const updateCheckResult = await autoUpdater.checkForUpdates();
-                        if (updateCheckResult && updateCheckResult.updateInfo) {
-                            const newVersion = updateCheckResult.updateInfo.version;
-                            if (newVersion !== currentVersion) {
-                                message += `New Version Available: ${newVersion}\n\nNew Release Notes:\n`;
-                                if (RELEASE_NOTES && RELEASE_NOTES[newVersion]) {
-                                    message += '• ' + RELEASE_NOTES[newVersion].join('\n• ') + '\n\n';
-                                } else if (updateCheckResult.updateInfo.releaseNotes) {
-                                    message += updateCheckResult.updateInfo.releaseNotes + '\n\n';
-                                } else {
-                                    message += 'No release notes available for new version.\n\n';
-                                }
-                                
-                                dialog.showMessageBox(mainWindow, {
-                                    title: 'Release Notes',
-                                    message: message,
-                                    buttons: ['Update Now', 'Later'],
-                                    defaultId: 1,
-                                    cancelId: 1,
-                                    detail: 'Would you like to update to the new version?'
-                                }).then(result => {
-                                    if (result.response === 0) {
-                                        autoUpdater.downloadUpdate();
-                                        mainWindow.webContents.send('update-message', 'Downloading update...');
-                                    }
-                                });
-                            } else {
-                                dialog.showMessageBox(mainWindow, {
-                                    title: 'Release Notes',
-                                    message: message,
-                                    buttons: ['OK']
-                                });
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error checking for updates:', error);
-                        dialog.showMessageBox(mainWindow, {
-                            title: 'Release Notes',
-                            message: message,
-                            buttons: ['OK']
-                        });
-                    }
-                }
-            },
-            {
                 label: 'Keyboard Shortcuts',
                 click: () => {
                     dialog.showMessageBox(mainWindow, {
