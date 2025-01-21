@@ -6,8 +6,12 @@ const store = new Store();
 
 const { applyTheme, getCurrentTheme } = require('./src/themes');
 const { formatTime, debounce } = require('./src/utils');
-const { INACTIVITY_TIMEOUT, LAST_POSITIONS_KEY, MAX_STORED_POSITIONS, MINIMUM_DURATION, MINIMUM_POSITION, SEEK_UPDATE_INTERVAL, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, DOUBLE_CLICK_DELAY, supportedFormats, mimeTypes } = require('./src/constants');
+const { INACTIVITY_TIMEOUT, MINIMUM_POSITION, SEEK_UPDATE_INTERVAL, MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, DOUBLE_CLICK_DELAY, supportedFormats, mimeTypes } = require('./src/constants');
 const { openFiles, openFolder } = require('./src/fileSystem')
+const { volumeSlider, previousBtn, nextBtn, playPauseBtn, muteBtn, updateVolume, toggleMute, playPrevious, playNext, togglePlayPause } = require('./src/mediaControl')
+const { adjustForScreenSize, updateWindowTitle, hideControls, showControls } = require('./src/playerUI')
+const { isFullscreenSupported, handleFullscreenChange, toggleFullscreen } = require('./src/fullscreenManager')
+const { showResumeDialog, removeLastPosition, getLastPosition, saveLastPosition } = require('./src/playbackPosition')
 
 const HardwareAcceleration = require('./src/hardwareAccelerations');
 const SubtitlesManager = require('./subtitles');
@@ -28,8 +32,6 @@ let lastSeekUpdate = 0;
 let isDragging = false;
 let animationFrame;
 let lastVolume = store.get('lastVolume', 0.5); // 50%
-let activeResumeTimer = null;
-let activeDialog = null;
 
 const rememberPlayback = store.get('rememberPlayback', true); // Default to true for existing users
 
@@ -39,13 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // DOM Elements
 const mediaPlayer = document.getElementById('media-player');
-const playPauseBtn = document.getElementById('play-pause');
 const timeSlider = document.getElementById('time-slider');
-const volumeSlider = document.getElementById('volume-slider');
 const timeDisplay = document.getElementById('time-display');
-const previousBtn = document.getElementById('previous');
-const nextBtn = document.getElementById('next');
-const muteBtn = document.getElementById('mute');
 const fullscreenBtn = document.getElementById('fullscreen');
 const shuffleBtn = document.getElementById('shuffle');
 const loopBtn = document.getElementById('loop');
@@ -53,8 +50,6 @@ const playlistElement = document.getElementById('playlist');
 const playerSection = document.querySelector('.player-section');
 const playlistPanel = document.getElementById('playlist-panel');
 const appContainer = document.querySelector('.app-container');
-const controlsOverlay = document.getElementById('controls-overlay');
-const playerContainer = document.getElementById('player-container');
 const clearPlaylistBtn = document.getElementById('clear-playlist');
 const togglePlaylistButton = document.getElementById('toggle-playlist');
 document.addEventListener('DOMContentLoaded', () => {
@@ -100,6 +95,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+
 mediaPlayer.volume = lastVolume;
 volumeSlider.value = lastVolume * 100;
 
@@ -122,42 +118,6 @@ window.addEventListener('resize', () => {1
         });
     }
 });
-
-function adjustForScreenSize() {
-    const width = Math.max(window.innerWidth, MIN_WINDOW_WIDTH);
-    
-    if (width < 900) {
-        // Adjust playlist panel
-        playlistPanel.style.width = '280px';
-        playerSection.style.minWidth = `${MIN_WINDOW_WIDTH - 280}px`; // Account for smaller playlist panel
-        
-        // Ensure controls stay visible
-        document.querySelectorAll('.control-button').forEach(button => {
-            button.style.padding = '6px';
-        });
-        
-        // Adjust volume slider
-        const volumeControl = document.querySelector('.volume-control');
-        if (volumeControl) {
-            volumeControl.style.minWidth = '80px';
-            volumeControl.style.width = '80px';
-        }
-    } else {
-        // Reset styles for larger screens
-        playlistPanel.style.width = '320px';
-        playerSection.style.minWidth = `${MIN_WINDOW_WIDTH - 320}px`;
-        
-        document.querySelectorAll('.control-button').forEach(button => {
-            button.style.padding = '8px';
-        });
-        
-        const volumeControl = document.querySelector('.volume-control');
-        if (volumeControl) {
-            volumeControl.style.minWidth = '100px';
-            volumeControl.style.width = '120px';
-        }
-    }
-}
 
 window.addEventListener('load', adjustForScreenSize);
 window.addEventListener('resize', adjustForScreenSize);
@@ -193,6 +153,9 @@ mediaPlayer.addEventListener('click', (e) => {
 
 const subtitlesManager = window.subtitlesManager = new SubtitlesManager(mediaPlayer);
 const hardwareAcceleration = new HardwareAcceleration(mediaPlayer);
+
+volumeSlider.style.setProperty('--volume-percent', volumeSlider.value);
+
 
 // Clear the timeout if the user moves away or starts dragging
 mediaPlayer.addEventListener('mouseleave', () => {
@@ -296,27 +259,21 @@ function smoothSeek() {
     requestAnimationFrame(smoothSeek);
 }
 
-function showControls() {
-    controlsOverlay.style.opacity = '1';
-    document.body.classList.remove('hide-cursor');
-    
-    clearTimeout(controlsTimeout);
-    controlsTimeout = setTimeout(hideControls, INACTIVITY_TIMEOUT);
+
+
+function updateTimeDisplay() {
+    if (!isNaN(mediaPlayer.duration)) {
+        timeSlider.max = mediaPlayer.duration;
+        timeSlider.value = mediaPlayer.currentTime;
+        timeDisplay.textContent = `${formatTime(mediaPlayer.currentTime)} / ${formatTime(mediaPlayer.duration)}`;
+        updateSliderProgress();
+    }
 }
 
-function hideControls() {
-    controlsOverlay.style.opacity = '0';
-    document.body.classList.add('hide-cursor');
-}
 
 // Event Listeners
-playPauseBtn.addEventListener('click', togglePlayPause);
-previousBtn.addEventListener('click', playPrevious);
-nextBtn.addEventListener('click', playNext);
-muteBtn.addEventListener('click', toggleMute);
 shuffleBtn.addEventListener('click', toggleShuffle);
 loopBtn.addEventListener('click', toggleLoop);
-volumeSlider.addEventListener('input', updateVolume);
 timeSlider.addEventListener('input', () => {
     const time = parseFloat(timeSlider.value);
     if (!isNaN(time)) {
@@ -476,48 +433,6 @@ function changePlaybackSpeed() {
     mediaPlayer.playbackRate = parseFloat(playbackSpeedSelect.value);
 }
 
-// Function to get stored positions
-function getStoredPositions() {
-    return store.get(LAST_POSITIONS_KEY, {});
-}
-
-// Function to save last position
-function saveLastPosition(filePath, position, duration) {
-    if (!filePath || !duration || duration < MINIMUM_DURATION || position < MINIMUM_POSITION) return;
-    
-    const positions = getStoredPositions();
-    
-    // Add new position
-    positions[filePath] = {
-        position: position,
-        timestamp: Date.now(),
-        duration: duration
-    };
-    
-    // Remove oldest entries if we exceed MAX_STORED_POSITIONS
-    const paths = Object.keys(positions);
-    if (paths.length > MAX_STORED_POSITIONS) {
-        const sortedPaths = paths.sort((a, b) => positions[b].timestamp - positions[a].timestamp);
-        const pathsToRemove = sortedPaths.slice(MAX_STORED_POSITIONS);
-        pathsToRemove.forEach(path => delete positions[path]);
-    }
-    
-    store.set(LAST_POSITIONS_KEY, positions);
-}
-
-// Function to get last position
-function getLastPosition(filePath) {
-    const positions = getStoredPositions();
-    return positions[filePath] || null;
-}
-
-// Function to remove last position
-function removeLastPosition(filePath) {
-    const positions = getStoredPositions();
-    delete positions[filePath];
-    store.set(LAST_POSITIONS_KEY, positions);
-}
-
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT') return;
@@ -580,7 +495,6 @@ document.addEventListener('keydown', (e) => {
             break;
     }
 });
-
 
 async function addToPlaylist(filePath) {
     // Get basic file info immediately
@@ -877,64 +791,7 @@ async function playFile(filePath) {
     }
 }
 
-// Helper function to show resume dialog
-function showResumeDialog(filePath, position) {
-    return new Promise(resolve => {
-        // Clean up any existing dialog
-        if (activeDialog) {
-            activeDialog.remove();
-            if (activeResumeTimer) {
-                clearTimeout(activeResumeTimer);
-            }
-        }
 
-        const template = document.getElementById('resume-dialog-template');
-        const dialog = template.content.cloneNode(true).firstElementChild;
-        dialog.dataset.filePath = filePath;
-        activeDialog = dialog;
-
-        const timeElement = dialog.querySelector('.resume-time');
-        timeElement.textContent = formatTime(position);
-
-        let timeLeft = 10;
-        const countdownElement = dialog.querySelector('.countdown');
-        countdownElement.textContent = `Auto-starting from beginning in ${timeLeft}s`;
-
-        const countdownInterval = setInterval(() => {
-            timeLeft--;
-            countdownElement.textContent = `Auto-starting from beginning in ${timeLeft}s`;
-        }, 1000);
-
-        const cleanupDialog = () => {
-            clearInterval(countdownInterval);
-            if (activeResumeTimer) {
-                clearTimeout(activeResumeTimer);
-                activeResumeTimer = null;
-            }
-            dialog.remove();
-            activeDialog = null;
-        };
-
-        document.getElementById('player-container').appendChild(dialog);
-
-        // Handle user choice
-        dialog.querySelector('.resume-yes').onclick = () => {
-            cleanupDialog();
-            resolve(true);
-        };
-        
-        dialog.querySelector('.resume-no').onclick = () => {
-            cleanupDialog();
-            resolve(false);
-        };
-
-        // Auto-hide dialog after 10 seconds
-        activeResumeTimer = setTimeout(() => {
-            cleanupDialog();
-            resolve(false);
-        }, 10000);
-    });
-}
 
 function updatePlayPauseIcon(isPaused) {
     playPauseBtn.innerHTML = isPaused 
@@ -942,20 +799,6 @@ function updatePlayPauseIcon(isPaused) {
         : `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
 }
 
-function togglePlayPause() {
-    if (mediaPlayer.paused) {
-        mediaPlayer.play()
-            .then(() => {
-                updatePlayPauseIcon(false);
-            })
-            .catch(error => {
-                console.error('Error playing media:', error);
-            });
-    } else {
-        mediaPlayer.pause();
-        updatePlayPauseIcon(true);
-    }
-}
 
 let savePositionInterval;
 mediaPlayer.addEventListener('play', () => {
@@ -1034,102 +877,8 @@ mediaPlayer.addEventListener('wheel', (e) => {
     }
 });
 
-function updateTimeDisplay() {
-    if (!isNaN(mediaPlayer.duration)) {
-        timeSlider.max = mediaPlayer.duration;
-        timeSlider.value = mediaPlayer.currentTime;
-        timeDisplay.textContent = `${formatTime(mediaPlayer.currentTime)} / ${formatTime(mediaPlayer.duration)}`;
-        updateSliderProgress();
-    }
-}
 
-volumeSlider.style.setProperty('--volume-percent', volumeSlider.value);
 
-function updateVolume() {
-    const volume = volumeSlider.value / 100;
-    mediaPlayer.volume = volume;
-    lastVolume = volume;
-    
-    // Save volume to store
-    store.set('lastVolume', volume);
-   
-    // Update the volume-percent CSS variable
-    volumeSlider.style.setProperty('--volume-percent', volumeSlider.value);
-
-    // Update volume icon based on level
-    if (volume === 0) {
-        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
-    } else {
-        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
-    }
-}
-
-function toggleMute() {
-    if (mediaPlayer.volume > 0) {
-        lastVolume = mediaPlayer.volume;
-        mediaPlayer.volume = 0;
-        volumeSlider.value = 0;
-        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
-    } else {
-        mediaPlayer.volume = lastVolume;
-        volumeSlider.value = lastVolume * 100;
-        store.set('lastVolume', lastVolume); // Save volume when unmuting
-        muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
-    }
-}
-
-function toggleFullscreen() {
-    // Check if we're already in fullscreen
-    const isCurrentlyFullscreen = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement
-    );
-
-    try {
-        if (!isCurrentlyFullscreen) {
-            // Define all possible fullscreen request methods
-            const requestFullscreen = playerContainer.requestFullscreen ||
-                playerContainer.webkitRequestFullscreen;
-
-            if (requestFullscreen) {
-                Promise.resolve(requestFullscreen.call(playerContainer))
-                    .then(() => {
-                        isFullscreen = true;
-                        ipcRenderer.send('toggle-menu-bar', false);
-                        showControls();
-                        fullscreenBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"></path><path d="M21 8h-3a2 2 0 0 1-2-2V3"></path><path d="M3 16h3a2 2 0 0 1 2 2v3"></path><path d="M16 21v-3a2 2 0 0 1 2-2h3"></path></svg>`;
-                    })
-                    .catch(err => {
-                        console.warn('Fullscreen request failed:', err);
-                        // Try alternative methods if the primary method fails
-                        if (playerContainer.webkitRequestFullscreen) {
-                            playerContainer.webkitRequestFullscreen();
-                        }
-                    });
-            }
-        } else {
-            // Define all possible exit fullscreen methods
-            const exitFullscreen = document.exitFullscreen ||
-                document.webkitExitFullscreen;
-
-            if (exitFullscreen) {
-                Promise.resolve(exitFullscreen.call(document))
-                    .then(() => {
-                        isFullscreen = false;
-                        ipcRenderer.send('toggle-menu-bar', true);
-                        clearTimeout(controlsTimeout);
-                        showControls();
-                        fullscreenBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>`;
-                    })
-                    .catch(err => {
-                        console.warn('Exit fullscreen failed:', err);
-                    });
-            }
-        }
-    } catch (error) {
-        console.error('Error toggling fullscreen:', error);
-    }
-}
 
 document.addEventListener('mousemove', () => {
     if (isFullscreen) {
@@ -1149,67 +898,6 @@ document.getElementById('controls-overlay').addEventListener('mouseleave', () =>
 
 document.addEventListener('fullscreenchange', handleFullscreenChange);
 document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-
-
-function handleFullscreenChange() {
-    isFullscreen = !!(
-        document.fullscreenElement ||
-        document.webkitFullscreenElement
-    );
-    
-    if (!isFullscreen) {
-        ipcRenderer.send('toggle-menu-bar', true);
-        clearTimeout(controlsTimeout);
-        showControls();
-    }
-}
-
-function isFullscreenSupported() {
-    return !!(
-        document.fullscreenEnabled ||
-        document.webkitFullscreenEnabled
-    );
-}
-
-function playNext() {
-    if (playlist.length === 0) return;
-
-    if (isShuffling) {
-        // If we haven't created a shuffle sequence or have reached the end
-        if (shuffledIndices.length === 0 || currentShuffleIndex >= shuffledIndices.length - 1) {
-            // If this is the first shuffle or we've reached the end
-            if (currentShuffleIndex === -1) {
-                // Starting a new shuffle - include current video
-                shuffledIndices = generateShuffledPlaylist(currentIndex);
-                currentShuffleIndex = 0;
-            } else {
-                // We've finished the sequence - generate new one excluding current video
-                shuffledIndices = generateShuffledPlaylist(-1);
-                currentShuffleIndex = 0;
-            }
-        } else {
-            // Move to next video in shuffled sequence
-            currentShuffleIndex++;
-        }
-        
-        currentIndex = shuffledIndices[currentShuffleIndex];
-    } else {
-        // Normal sequential playback
-        currentIndex = (currentIndex + 1) % playlist.length;
-        // Reset shuffle state when shuffle is off
-        shuffledIndices = [];
-        currentShuffleIndex = -1;
-    }
-
-    playFile(playlist[currentIndex].path);
-}
-
-
-function playPrevious() {
-    if (playlist.length === 0) return;
-    currentIndex = (currentIndex - 1 + playlist.length) % playlist.length;
-    playFile(playlist[currentIndex].path);
-}
 
 function removeFromPlaylist(index) {
     if (index === currentIndex) {
@@ -1295,12 +983,6 @@ function handleMediaEnd() {
         mediaPlayer.pause();
         updatePlayPauseIcon(true);
     }
-}
-
-function updateWindowTitle() {
-    document.title = currentIndex === -1 ? 
-        'Fury' : 
-        `${playlist[currentIndex].metadata.title} - Fury`;
 }
 
 clearPlaylistBtn.addEventListener('click', () => {

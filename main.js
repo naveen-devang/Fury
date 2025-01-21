@@ -21,6 +21,7 @@ if (isHardwareAccelerated) {
   app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
   app.commandLine.appendSwitch('enable-hardware-overlays', 'single-fullscreen');
   app.commandLine.appendSwitch('enable-features', 'VaapiVideoDecoder');
+  app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport');
 }
 
 // Configure logging
@@ -63,7 +64,7 @@ if (process.platform === 'win32') {
               
               // Find and handle media file path from second instance
               const filePath = commandLine.find((arg) => {
-                  return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(arg);
+                  return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|ts|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(arg);
               });
               
               if (filePath) {
@@ -74,7 +75,7 @@ if (process.platform === 'win32') {
 
       // Handle file opened from Explorer
       const filePath = process.argv.slice(1).find((arg) => {
-          return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(arg);
+          return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|ts|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(arg);
       });
       
       if (filePath) {
@@ -287,7 +288,7 @@ ipcMain.handle('open-files', async () => {
           { name: 'Media Files', 
             extensions: [
               // Video formats
-              'mp4', 'mkv', 'avi', 'webm', 'mov', 'flv', 'm4v', '3gp', 'wmv',
+              'mp4', 'mkv', 'avi', 'webm', 'mov', 'flv', 'm4v', '3gp', 'wmv', 'ts',
               // Audio formats
               'mp3', 'wav', 'ogg', 'aac', 'm4a', 'flac', 'wma', 'opus'
             ] 
