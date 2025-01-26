@@ -185,28 +185,16 @@ autoUpdater.on('update-available', (info) => {
 
   if (info.releaseNotes) {
     if (typeof info.releaseNotes === 'string') {
-      releaseNotes = info.releaseNotes
-        .replace(/<[^>]*>/g, '') // Remove HTML tags
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&amp;/g, '&')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'");
+      releaseNotes = info.releaseNotes;
     } else if (Array.isArray(info.releaseNotes)) {
       releaseNotes = info.releaseNotes
-        .map((note) => {
-          const cleanNote = note.note
-            .replace(/<[^>]*>/g, '')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&amp;/g, '&')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'");
-          return `${note.version}\n${cleanNote}`;
-        })
+        .map((note) => `${note.version}\n${note.note}`)
         .join('\n\n');
     }
   }
+
+  // Store the release notes for this version
+  store.set(`releaseNotes.${version}`, releaseNotes);
 
   dialog.showMessageBox(mainWindow, {
     type: 'info',
@@ -224,16 +212,17 @@ autoUpdater.on('update-available', (info) => {
   });
 });
 
-
 autoUpdater.on('download-progress', (progressObj) => {
   mainWindow.webContents.send('update-progress', progressObj.percent);
 });
 
 function showPostUpdateReleaseNotes(version) {
-  let releaseNotes = getReleaseNotes(version);
+  // Get the stored release notes from electron-store
+  const releaseNotes = store.get(`releaseNotes.${version}`);
+  
   if (releaseNotes) {
     // Clean up HTML tags and entities
-    releaseNotes = releaseNotes
+    const cleanedNotes = releaseNotes
       .replace(/<[^>]*>/g, '')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
@@ -245,7 +234,7 @@ function showPostUpdateReleaseNotes(version) {
       type: 'info',
       title: 'What\'s New',
       message: `Updates in version ${version}`,
-      detail: releaseNotes,
+      detail: cleanedNotes,
       buttons: ['OK'],
       defaultId: 0
     });

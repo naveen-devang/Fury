@@ -1,11 +1,14 @@
+// release-notes.js
 const RELEASE_NOTES = {
-    "0.0.38": [
-      "Your new features/fixes here"
-    ],
-    "0.0.17": [
-      "Added Hardware Acceleration Support",
-      "Embedded Subtitles now work"
-    ]
-  };
 
-module.exports = RELEASE_NOTES;
+};
+
+module.exports = {
+  RELEASE_NOTES,
+  getReleaseNotes: function(version) {
+    if (RELEASE_NOTES[version]) {
+      return '• ' + RELEASE_NOTES[version].join('\n• ');
+    }
+    return null;
+  }
+};
