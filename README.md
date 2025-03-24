@@ -1,5 +1,8 @@
 # 🎬 Fury
 
+![fury-multimedia-player-for-windows](https://github.com/user-attachments/assets/f1af72ac-56ea-43e3-a955-0fdbf9049fb9)
+
+
 ## ✨ Features
 
 ### 🌟 Playback Experience
