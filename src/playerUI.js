@@ -37,17 +37,6 @@ function adjustForScreenSize() {
     const volumeControl = document.querySelector(".volume-control");
     if (volumeControl) {
       if (width < 800) {
-        volumeControl.classList.add("vertical");
-
-        // Make sure we have a tooltip for the volume
-        if (!volumeControl.querySelector(".volume-tooltip")) {
-          const tooltip = document.createElement("div");
-          tooltip.className = "volume-tooltip";
-          tooltip.textContent = Math.round(volumeSlider.value) + "%";
-          volumeControl.appendChild(tooltip);
-        }
-      } else {
-        volumeControl.classList.remove("vertical");
         volumeControl.style.minWidth = "80px";
         volumeControl.style.width = "80px";
       }
@@ -63,7 +52,6 @@ function adjustForScreenSize() {
 
     const volumeControl = document.querySelector(".volume-control");
     if (volumeControl) {
-      volumeControl.classList.remove("vertical");
       volumeControl.style.minWidth = "100px";
       volumeControl.style.width = "120px";
     }

@@ -1,0 +1,89 @@
+name: Build and Release Electron App
+
+on:
+  push:
+    # Trigger the workflow for tags matching "v*"
+    tags:
+      - "v*" # Runs only when a new version tag is pushed
+
+permissions:
+  contents: write # Allows the workflow to create a GitHub release
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+
+    # Matrix to run on both macOS and Windows
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest] # macOS & Windows builds
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4 # Checkout the repo
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4 # Set up Node.js environment
+        with:
+          node-version: 23.10.0 # Use the same Node.js version as your project
+          cache: "npm" # Cache npm dependencies for faster builds
+
+      - name: Install Dependencies
+        run: npm install # Install the project dependencies
+
+      - name: Build for macOS
+        if: matrix.os == 'macos-latest' # Build for macOS
+        run: npx electron-builder --mac --publish never # Build macOS app
+
+      - name: Build for Windows
+        if: matrix.os == 'windows-latest' # Build for Windows
+        run: npx electron-builder --win --publish never # Build Windows app
+
+      # Upload macOS build artifact
+      - name: Upload macOS Build
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-build
+          path: |
+            dist/*.dmg
+            dist/latest-mac.yml
+
+      # Upload Windows build artifact
+      - name: Upload Windows Build
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            dist/*.exe
+            dist/*.exe.blockmap
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest # Release job runs on an Ubuntu machine
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4 # Checkout the repo
+
+      - name: Download macOS Build
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-build
+          path: dist/
+
+      - name: Download Windows Build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist/
+
+      - name: Debug - List dist files before release
+        run: ls -l dist/
+
+      - name: Upload Release to GitHub
+        uses: softprops/action-gh-release@v2 # GitHub release action
+        with:
+          files: dist/*.dmg, dist/latest-mac.yml, dist/*.exe, dist/*.exe.blockmap # Attach macOS and Windows builds
+          token: ${{ secrets.MY_GITHUB_TOKEN }} # GitHub token to authenticate
