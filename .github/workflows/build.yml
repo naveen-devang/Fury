@@ -67,4 +67,4 @@ jobs:
         uses: softprops/action-gh-release@v2 # GitHub release action
         with:
           files: dist/*.dmg, dist/*.exe # Attach macOS and Windows builds
-          token: ${{ secrets.GITHUB_TOKEN }} # GitHub token to authenticate
+          token: ${{ secrets.GH_TOKEN }} # GitHub token to authenticate
