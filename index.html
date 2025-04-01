@@ -1,113 +1,396 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-    <title>Fury</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <div class="app-container">
-        <div class="player-section">
-            <div id="player-container">
-                <video id="media-player"></video>
-                <div id="controls-overlay">
-                    <div class="time-control-row">
-                        <input type="range" id="time-slider" min="0" max="100" value="0">
-                        <span id="time-display">00:00 / 00:00</span>
-                    </div>
-                    <div class="controls-container">
-                        <div class="playback-controls">
-                            <button class="control-button" id="previous" title="Previous">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
-                            </button>
-                            <button class="control-button" id="play-pause" title="Play/Pause">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                            </button>
-                            <button class="control-button" id="next" title="Next">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
-                            </button>
-                            
-                            <div class="volume-control">
-                                <button class="control-button" id="mute" title="Mute">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-                                </button>
-                                <input type="range" id="volume-slider" min="0" max="100" value="100">
-                            </div>
+    <head>
+        <title>Fury</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <div class="app-container">
+            <div class="player-section">
+                <div id="player-container">
+                    <video id="media-player"></video>
+                    <div id="controls-overlay">
+                        <div class="time-control-row">
+                            <input
+                                type="range"
+                                id="time-slider"
+                                min="0"
+                                max="100"
+                                value="0"
+                            />
+                            <span id="time-display">00:00 / 00:00</span>
                         </div>
-                        
-                        <div class="advanced-options">
-                            <button class="control-button" id="shuffle" title="Shuffle">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
-                            </button>
-                            <button class="control-button" id="loop" title="Loop">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"></path><path d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"></path><path d="M21 11.8v2a4 4 0 0 1-4 4H4.2"></path></svg>
-                            </button>
-                            <div id="playback-speed-container">
-                                <button class="speed-button" id="speed-toggle">1.0x</button>
-                                <div class="speed-options">
-                                    <button class="speed-option" data-speed="0.25">0.25x</button>
-                                    <button class="speed-option" data-speed="0.5">0.5x</button>
-                                    <button class="speed-option" data-speed="0.75">0.75x</button>
-                                    <button class="speed-option active" data-speed="1.0">1.0x</button>
-                                    <button class="speed-option" data-speed="1.25">1.25x</button>
-                                    <button class="speed-option" data-speed="1.5">1.5x</button>
-                                    <button class="speed-option" data-speed="1.75">1.75x</button>
-                                    <button class="speed-option" data-speed="2.0">2.0x</button>
+                        <div class="controls-container">
+                            <div class="playback-controls">
+                                <button
+                                    class="control-button"
+                                    id="previous"
+                                    title="Previous"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <polygon
+                                            points="19 20 9 12 19 4 19 20"
+                                        ></polygon>
+                                        <line
+                                            x1="5"
+                                            y1="19"
+                                            x2="5"
+                                            y2="5"
+                                        ></line>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="control-button"
+                                    id="play-pause"
+                                    title="Play/Pause"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <polygon
+                                            points="5 3 19 12 5 21 5 3"
+                                        ></polygon>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="control-button"
+                                    id="next"
+                                    title="Next"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <polygon
+                                            points="5 4 15 12 5 20 5 4"
+                                        ></polygon>
+                                        <line
+                                            x1="19"
+                                            y1="5"
+                                            x2="19"
+                                            y2="19"
+                                        ></line>
+                                    </svg>
+                                </button>
+
+                                <div class="volume-control">
+                                    <button
+                                        class="control-button"
+                                        id="mute"
+                                        title="Mute"
+                                    >
+                                        <svg
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            width="24"
+                                            height="24"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        >
+                                            <polygon
+                                                points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
+                                            ></polygon>
+                                            <path
+                                                d="M15.54 8.46a5 5 0 0 1 0 7.07"
+                                            ></path>
+                                            <path
+                                                d="M19.07 4.93a10 10 0 0 1 0 14.14"
+                                            ></path>
+                                        </svg>
+                                    </button>
+                                    <input
+                                        type="range"
+                                        id="volume-slider"
+                                        min="0"
+                                        max="100"
+                                        value="100"
+                                    />
                                 </div>
                             </div>
-                            <button class="control-button" id="fullscreen" title="Fullscreen">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
-                            </button>
-                            <button class="control-button" id="toggle-playlist" title="Toggle Playlist">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-list-music"><path d="M21 15V6"/><path d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"/><path d="M12 12H3"/><path d="M16 6H3"/><path d="M12 18H3"/></svg>
-                            </button>
+
+                            <div class="advanced-options">
+                                <button
+                                    class="control-button"
+                                    id="shuffle"
+                                    title="Shuffle"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <polyline
+                                            points="16 3 21 3 21 8"
+                                        ></polyline>
+                                        <line
+                                            x1="4"
+                                            y1="20"
+                                            x2="21"
+                                            y2="3"
+                                        ></line>
+                                        <polyline
+                                            points="21 16 21 21 16 21"
+                                        ></polyline>
+                                        <line
+                                            x1="15"
+                                            y1="15"
+                                            x2="21"
+                                            y2="21"
+                                        ></line>
+                                        <line
+                                            x1="4"
+                                            y1="4"
+                                            x2="9"
+                                            y2="9"
+                                        ></line>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="control-button"
+                                    id="loop"
+                                    title="Loop"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <path d="M17 2.1l4 4-4 4"></path>
+                                        <path
+                                            d="M3 12.2v-2a4 4 0 0 1 4-4h12.8M7 21.9l-4-4 4-4"
+                                        ></path>
+                                        <path
+                                            d="M21 11.8v2a4 4 0 0 1-4 4H4.2"
+                                        ></path>
+                                    </svg>
+                                </button>
+                                <div id="playback-speed-container">
+                                    <button
+                                        class="speed-button"
+                                        id="speed-toggle"
+                                    >
+                                        1.0x
+                                    </button>
+                                    <div class="speed-options">
+                                        <button
+                                            class="speed-option"
+                                            data-speed="0.25"
+                                        >
+                                            0.25x
+                                        </button>
+                                        <button
+                                            class="speed-option"
+                                            data-speed="0.5"
+                                        >
+                                            0.5x
+                                        </button>
+                                        <button
+                                            class="speed-option"
+                                            data-speed="0.75"
+                                        >
+                                            0.75x
+                                        </button>
+                                        <button
+                                            class="speed-option active"
+                                            data-speed="1.0"
+                                        >
+                                            1.0x
+                                        </button>
+                                        <button
+                                            class="speed-option"
+                                            data-speed="1.25"
+                                        >
+                                            1.25x
+                                        </button>
+                                        <button
+                                            class="speed-option"
+                                            data-speed="1.5"
+                                        >
+                                            1.5x
+                                        </button>
+                                        <button
+                                            class="speed-option"
+                                            data-speed="1.75"
+                                        >
+                                            1.75x
+                                        </button>
+                                        <button
+                                            class="speed-option"
+                                            data-speed="2.0"
+                                        >
+                                            2.0x
+                                        </button>
+                                    </div>
+                                </div>
+                                <button
+                                    class="control-button"
+                                    id="fullscreen"
+                                    title="Fullscreen"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    >
+                                        <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                                        <path
+                                            d="M21 8V5a2 2 0 0 0-2-2h-3"
+                                        ></path>
+                                        <path
+                                            d="M3 16v3a2 2 0 0 0 2 2h3"
+                                        ></path>
+                                        <path
+                                            d="M16 21h3a2 2 0 0 0 2-2v-3"
+                                        ></path>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="control-button"
+                                    id="toggle-playlist"
+                                    title="Toggle Playlist"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        width="24"
+                                        height="24"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        class="lucide lucide-list-music"
+                                    >
+                                        <path d="M21 15V6" />
+                                        <path
+                                            d="M18.5 18a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"
+                                        />
+                                        <path d="M12 12H3" />
+                                        <path d="M16 6H3" />
+                                        <path d="M12 18H3" />
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-    
-        <!-- New Playlist Panel Structure -->
-        <div id="playlist-panel">
-            <div class="playlist-header">
-                <h3>Playlist</h3>
-                <button class="control-button" id="clear-playlist" title="Clear Playlist">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 6h18"></path>
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                    </svg>
-                </button>
-            </div>
-    
-            <div class="playlist-container">
-                <!-- Empty State - Shows when playlist is empty -->
-                <div class="playlist-empty">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M9 18V5l12-2v13"/>
-                        <circle cx="6" cy="18" r="3"/>
-                        <circle cx="18" cy="16" r="3"/>
-                    </svg>
-                    <p>Drop media files here<br>to start playing</p>
-                </div>
-    
-                <div id="playlist">
-                </div>
-            </div>
-        </div>
 
-        <template id="resume-dialog-template">
-            <div class="resume-dialog">
-                <div class="resume-content">
-                    <p class="resume-position-text">Resume from <span class="resume-time"></span>?</p>
-                    <p class="countdown"></p>
-                    <div class="resume-buttons">
-                        <button class="resume-yes">Yes</button>
-                        <button class="resume-no">No</button>
+            <!-- New Playlist Panel Structure -->
+            <div id="playlist-panel">
+                <div class="playlist-header">
+                    <h3>Playlist</h3>
+                    <button
+                        class="control-button"
+                        id="clear-playlist"
+                        title="Clear Playlist"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M3 6h18"></path>
+                            <path
+                                d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"
+                            ></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="playlist-container">
+                    <!-- Empty State - Shows when playlist is empty -->
+                    <div class="playlist-empty">
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="24"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        >
+                            <path d="M9 18V5l12-2v13" />
+                            <circle cx="6" cy="18" r="3" />
+                            <circle cx="18" cy="16" r="3" />
+                        </svg>
+                        <p>Drop media files here<br />to start playing</p>
+                    </div>
+
+                    <div id="playlist"></div>
+                </div>
+            </div>
+
+            <template id="resume-dialog-template">
+                <div class="resume-dialog">
+                    <div class="resume-content">
+                        <p class="resume-position-text">
+                            Resume from <span class="resume-time"></span>?
+                        </p>
+                        <p class="countdown"></p>
+                        <div class="resume-buttons">
+                            <button class="resume-yes">Yes</button>
+                            <button class="resume-no">No</button>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </template>
-    </div>
-    <script src="renderer.js"></script>
-</body>
+            </template>
+        </div>
+        <script src="renderer.js"></script>
+    </body>
 </html>

@@ -8,8 +8,7 @@ const { promisify } = require("util");
 const writeFile = promisify(fs.writeFile);
 const mkdir = promisify(fs.mkdir);
 
-// Replace the FFmpeg initialization code at the top of subtitles.js with this:
-const { app } = require("@electron/remote"); // Add this line
+const { app } = require("@electron/remote");
 const ffmpeg = require("fluent-ffmpeg");
 const path = require("path");
 
@@ -56,6 +55,12 @@ function initializeFfmpeg() {
 class SubtitlesManager {
   constructor(mediaPlayer) {
     this.debug = true; // Set to true to enable detailed logging
+
+    this.store = new Store();
+
+    // Initialize subtitle delay with stored value
+    this.subtitleDelay = this.store.get("subtitleDelay", 0);
+    this.lastSubtitleDelay = this.store.get("lastSubtitleDelay", 0);
 
     // Rest of the constructor remains the same as in previous implementation
     this.mediaPlayer = mediaPlayer;
@@ -234,12 +239,350 @@ class SubtitlesManager {
     }
   }
 
+  setSubtitleDelay(delayInSeconds) {
+    // Store the delay value
+    this.subtitleDelay = delayInSeconds;
+    this.store.set("subtitleDelay", delayInSeconds);
+    this.store.set("lastSubtitleDelay", delayInSeconds);
+
+    this.log(`Setting subtitle delay to ${delayInSeconds.toFixed(1)}s`);
+
+    // Apply the delay to the current subtitle track if one is active
+    if (this.activeTrack) {
+      this.applySubtitleDelay();
+    }
+
+    // Update the UI to show the current delay
+    this.updateDelayDisplay();
+  }
+
+  applySubtitleDelay() {
+    if (!this.activeTrack) {
+      this.log("No active subtitle track to apply delay to");
+      return;
+    }
+
+    this.log(
+      `Applying ${this.subtitleDelay.toFixed(1)}s delay to subtitle track`,
+    );
+
+    // Get all track elements
+    const tracks = Array.from(this.mediaPlayer.getElementsByTagName("track"));
+
+    // For each track, we need to create a modified version with the delay applied
+    tracks.forEach((track) => {
+      // Only process if it's the active track
+      if (track.track === this.activeTrack) {
+        const originalPath = track.dataset.originalPath;
+        const isEmbedded = track.dataset.isEmbedded === "true";
+
+        this.log(`Processing track: ${track.label}`);
+
+        // Cache key for the delayed version
+        const cacheKey = `${originalPath}_delay_${this.subtitleDelay}`;
+
+        // If it's not in the cache or the delay has changed, process it
+        if (!this.subtitleCache.has(cacheKey)) {
+          this.log(`Generating delayed subtitle for ${cacheKey}`);
+
+          // Get the original VTT content
+          const originalVttSrc = track.src;
+
+          // Fetch the content and apply the delay
+          fetch(originalVttSrc)
+            .then((response) => {
+              if (!response.ok) {
+                throw new Error(
+                  `Failed to fetch subtitle content: ${response.status}`,
+                );
+              }
+              return response.text();
+            })
+            .then((vttContent) => {
+              // Apply the delay to the VTT content
+              this.log("Applying delay to VTT content");
+              const delayedVtt = this.applyDelayToVtt(
+                vttContent,
+                this.subtitleDelay,
+              );
+
+              // Create a new blob and URL
+              const blob = new Blob([delayedVtt], { type: "text/vtt" });
+              const url = URL.createObjectURL(blob);
+
+              // Cache the delayed version
+              this.subtitleCache.set(cacheKey, url);
+
+              // Update the track source
+              track.src = url;
+
+              // Make sure it's showing if it was the active track
+              this.log("Setting track mode to showing");
+              track.track.mode = "showing";
+              this.activeTrack = track.track;
+            })
+            .catch((err) => {
+              console.error("Error applying subtitle delay:", err);
+            });
+        } else {
+          this.log(`Using cached delayed subtitle for ${cacheKey}`);
+          // Use cached delayed version
+          track.src = this.subtitleCache.get(cacheKey);
+          track.track.mode = "showing";
+          this.activeTrack = track.track;
+        }
+      }
+    });
+  }
+
+  applyDelayToVtt(vttContent, delayInSeconds) {
+    // Parse the VTT content and apply the delay to each cue
+    const lines = vttContent.split("\n");
+    const output = [];
+
+    // VTT file always starts with "WEBVTT"
+    let inCue = false;
+    let isHeader = true;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Always include the WEBVTT header unchanged
+      if (isHeader) {
+        output.push(line);
+        if (line === "WEBVTT" || line.startsWith("WEBVTT ")) {
+          isHeader = false;
+        }
+        continue;
+      }
+
+      // Look for timestamp lines
+      if (line.includes("-->")) {
+        inCue = true;
+        const timestamps = line.split("-->");
+        if (timestamps.length === 2) {
+          const startTime = this.adjustTimestamp(
+            timestamps[0].trim(),
+            delayInSeconds,
+          );
+          const endTime = this.adjustTimestamp(
+            timestamps[1].trim(),
+            delayInSeconds,
+          );
+          output.push(`${startTime} --> ${endTime}`);
+        } else {
+          // If the line is malformed, just include it unchanged
+          output.push(line);
+        }
+      } else {
+        // Non-timestamp lines are included unchanged
+        output.push(line);
+      }
+
+      // Empty line means end of a cue
+      if (inCue && line === "") {
+        inCue = false;
+      }
+    }
+
+    return output.join("\n");
+  }
+
   async initializeEmbeddedSubtitles() {
     // Create temp directory if it doesn't exist
     await this.initializeTempDirectory();
 
     // Clear any existing extracted subtitles
     await this.cleanupTempFiles();
+  }
+
+  adjustTimestamp(timestamp, delayInSeconds) {
+    // Parse the timestamp (format: HH:MM:SS.mmm)
+    const parts = timestamp.split(":");
+    if (parts.length !== 3) return timestamp;
+
+    const hours = parseInt(parts[0]);
+    const minutes = parseInt(parts[1]);
+    const secondsAndMs = parts[2].split(".");
+    const seconds = parseInt(secondsAndMs[0]);
+    const ms = parseInt(secondsAndMs[1] || "0");
+
+    // Convert to total milliseconds
+    let totalMs = (hours * 3600 + minutes * 60 + seconds) * 1000 + ms;
+
+    // Apply delay (convert delay from seconds to milliseconds)
+    totalMs += delayInSeconds * 1000;
+    if (totalMs < 0) totalMs = 0; // Don't allow negative times
+
+    // Convert back to timestamp format
+    const newHours = Math.floor(totalMs / 3600000);
+    totalMs %= 3600000;
+    const newMinutes = Math.floor(totalMs / 60000);
+    totalMs %= 60000;
+    const newSeconds = Math.floor(totalMs / 1000);
+    const newMs = totalMs % 1000;
+
+    return `${newHours.toString().padStart(2, "0")}:${newMinutes.toString().padStart(2, "0")}:${newSeconds.toString().padStart(2, "0")}.${newMs.toString().padStart(3, "0")}`;
+  }
+
+  updateDelayDisplay() {
+    const delayDisplay = document.getElementById("subtitle-delay-display");
+    if (delayDisplay) {
+      // Format the delay: for example "+1.5s" or "-0.5s"
+      const formattedDelay =
+        this.subtitleDelay > 0
+          ? `+${this.subtitleDelay.toFixed(1)}s`
+          : `${this.subtitleDelay.toFixed(1)}s`;
+
+      this.log(`Updating delay display to: ${formattedDelay}`);
+      delayDisplay.textContent = formattedDelay;
+
+      // Highlight if there's a non-zero delay
+      delayDisplay.classList.toggle("active", this.subtitleDelay !== 0);
+    } else {
+      this.log("Delay display element not found");
+    }
+  }
+
+  adjustSubtitleDelay(amount) {
+    // Adjust the delay by the given amount (positive or negative)
+    const newDelay = parseFloat((this.subtitleDelay + amount).toFixed(1));
+    this.log(`Adjusting subtitle delay by ${amount}s to ${newDelay}s`);
+    this.setSubtitleDelay(newDelay);
+  }
+
+  toggleDebugOverlay() {
+    let overlay = document.getElementById("subtitle-debug-overlay");
+
+    if (overlay) {
+      overlay.remove();
+      return;
+    }
+
+    overlay = document.createElement("div");
+    overlay.id = "subtitle-debug-overlay";
+    overlay.style.position = "absolute";
+    overlay.style.top = "10px";
+    overlay.style.left = "10px";
+    overlay.style.background = "rgba(0,0,0,0.7)";
+    overlay.style.color = "white";
+    overlay.style.padding = "10px";
+    overlay.style.borderRadius = "5px";
+    overlay.style.zIndex = "9999";
+    overlay.style.fontSize = "12px";
+    overlay.style.fontFamily = "monospace";
+
+    const updateDebugInfo = () => {
+      if (!document.getElementById("subtitle-debug-overlay")) return;
+
+      const trackElements = Array.from(
+        this.mediaPlayer.getElementsByTagName("track"),
+      );
+      const activeTrack = trackElements.find(
+        (track) => track.track === this.activeTrack,
+      );
+
+      overlay.innerHTML = `
+        <div>Subtitle Debug:</div>
+        <div>Current Delay: ${this.subtitleDelay.toFixed(1)}s</div>
+        <div>Tracks Count: ${trackElements.length}</div>
+        <div>Active Track: ${activeTrack ? "Yes" : "No"}</div>
+        ${activeTrack ? `<div>Track Path: ${activeTrack.dataset.originalPath.substring(0, 30)}...</div>` : ""}
+        ${activeTrack ? `<div>Track Src: ${activeTrack.src.substring(0, 30)}...</div>` : ""}
+        <div>Cache Entries: ${this.subtitleCache.size}</div>
+      `;
+
+      requestAnimationFrame(updateDebugInfo);
+    };
+
+    document.body.appendChild(overlay);
+    updateDebugInfo();
+  }
+
+  resetSubtitleDelay() {
+    this.log("Completely resetting subtitle delay system");
+
+    // Clear the delay values
+    this.subtitleDelay = 0;
+    this.store.set("subtitleDelay", 0);
+    this.store.set("lastSubtitleDelay", 0);
+
+    // Update the display
+    this.updateDelayDisplay();
+
+    // This is key: We need to actually reset the subtitles by reloading the active track
+    if (this.activeTrack) {
+      const trackElements = Array.from(
+        this.mediaPlayer.getElementsByTagName("track"),
+      );
+      const activeTrack = trackElements.find(
+        (track) => track.track === this.activeTrack,
+      );
+
+      if (activeTrack) {
+        const originalPath = activeTrack.dataset.originalPath;
+        const isEmbedded = activeTrack.dataset.isEmbedded === "true";
+        const streamIndex = activeTrack.dataset.streamIndex;
+
+        // Temporarily store active track info
+        const trackInfo = {
+          path: originalPath,
+          isEmbedded: isEmbedded,
+          streamIndex: streamIndex ? parseInt(streamIndex) : undefined,
+        };
+
+        // Disable current track
+        this.disableAllTextTracks();
+        this.activeTrack = null;
+
+        // Remove the track element
+        activeTrack.remove();
+
+        // Remove from cache
+        if (this.subtitleCache.has(originalPath)) {
+          const oldUrl = this.subtitleCache.get(originalPath);
+          if (oldUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(oldUrl);
+          }
+          this.subtitleCache.delete(originalPath);
+        }
+
+        // Also clear any delayed versions
+        for (const [key, url] of [...this.subtitleCache.entries()]) {
+          if (key.startsWith(`${originalPath}_delay_`)) {
+            if (url.startsWith("blob:")) {
+              URL.revokeObjectURL(url);
+            }
+            this.subtitleCache.delete(key);
+          }
+        }
+
+        // Re-add the track with no delay
+        setTimeout(async () => {
+          try {
+            if (trackInfo.isEmbedded && trackInfo.streamIndex !== undefined) {
+              // Handle embedded subtitle
+              const embedInfo = this.embeddedSubtitles.find(
+                (s) => s.index === trackInfo.streamIndex,
+              );
+              if (embedInfo) {
+                await this.addSubtitleTrack(trackInfo.path, true, embedInfo);
+              }
+            } else {
+              // Handle external subtitle
+              await this.addSubtitleTrack(trackInfo.path, false);
+            }
+
+            // Re-activate the subtitle
+            await this.setActiveSubtitle(trackInfo.path);
+
+            this.log("Successfully reset and reloaded subtitle");
+          } catch (err) {
+            console.error("Error reloading subtitle after reset:", err);
+          }
+        }, 100);
+      }
+    }
   }
 
   async detectEmbeddedSubtitles(videoPath) {
@@ -282,22 +625,24 @@ class SubtitlesManager {
   saveSubtitleState() {
     // Save current subtitle state
     this.store.set("globalSubtitleEnabled", !!this.activeTrack);
+    this.store.set("subtitleDelay", this.subtitleDelay);
+
     if (this.lastSuccessfulSubtitle) {
       this.store.set("lastSuccessfulSubtitle", this.lastSuccessfulSubtitle);
     } else {
-      this.store.delete("lastSuccessfulSubtitle"); // Use delete
+      this.store.delete("lastSuccessfulSubtitle");
     }
     if (this.lastSuccessfulLanguage) {
       this.store.set("lastSuccessfulLanguage", this.lastSuccessfulLanguage);
     } else {
-      this.store.delete("lastSuccessfulLanguage"); // Use delete
+      this.store.delete("lastSuccessfulLanguage");
     }
 
     this.store.set("subtitleHistory", this.subtitleHistory);
     if (this.lastUsedLanguage) {
       this.store.set("lastUsedLanguage", this.lastUsedLanguage);
     } else {
-      this.store.delete("lastUsedLanguage"); // Use delete
+      this.store.delete("lastUsedLanguage");
     }
   }
 
@@ -325,13 +670,13 @@ class SubtitlesManager {
     subtitleButton.id = "subtitles-button";
     subtitleButton.title = "Subtitles";
     subtitleButton.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 7c0-1.1.9-2 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
-                <path d="M7 12h3"/>
-                <path d="M14 12h3"/>
-                <path d="M7 16h10"/>
-            </svg>
-        `;
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 7c0-1.1.9-2 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>
+        <path d="M7 12h3"/>
+        <path d="M14 12h3"/>
+        <path d="M7 16h10"/>
+      </svg>
+    `;
 
     // Create subtitle menu
     const subtitleMenu = document.createElement("div");
@@ -339,17 +684,32 @@ class SubtitlesManager {
     subtitleMenu.style.position = "absolute";
     subtitleMenu.style.display = "none";
     subtitleMenu.innerHTML = `
-            <div class="subtitle-options">
-                <div class="subtitle-track-list"></div>
-                <div class="subtitle-controls">
-                    <button id="load-subtitle">Load Subtitle File</button>
-                    <label>
-                        <input type="checkbox" id="auto-load-subtitles" ${this.autoLoadEnabled ? "checked" : ""}>
-                        Auto-load subtitles
-                    </label>
-                </div>
-            </div>
-        `;
+      <div class="subtitle-options">
+        <div class="subtitle-track-list"></div>
+
+        <div class="subtitle-delay-controls">
+          <div class="subtitle-delay-header">
+            <span>Subtitle Delay: </span>
+            <span id="subtitle-delay-display">${this.subtitleDelay.toFixed(1)}s</span>
+          </div>
+          <div class="subtitle-delay-buttons">
+            <button id="subtitle-delay-decrease">-0.1s</button>
+            <button id="subtitle-delay-reset">Reset</button>
+            <button id="subtitle-delay-increase">+0.1s</button>
+          </div>
+          <div class="subtitle-delay-buttons secondary">
+            <button id="subtitle-delay-decrease-large">-1.0s</button>
+            <button id="subtitle-delay-increase-large">+1.0s</button>
+          </div>
+
+        <div class="subtitle-controls">
+          <button id="load-subtitle">Load Subtitle File</button>
+          <label>
+            <input type="checkbox" id="auto-load-subtitles" ${this.autoLoadEnabled ? "checked" : ""}>
+            Auto-load subtitles
+          </label>
+      </div>
+    `;
 
     // Insert elements
     advancedOptions.insertBefore(subtitleButton, advancedOptions.firstChild);
@@ -373,6 +733,46 @@ class SubtitlesManager {
     document.getElementById("load-subtitle")?.addEventListener("click", () => {
       this.loadSubtitleFile();
     });
+
+    // Add event listeners for delay controls
+    document
+      .getElementById("subtitle-delay-decrease")
+      ?.addEventListener("click", () => {
+        this.log("Decrease button clicked");
+        this.adjustSubtitleDelay(-0.1);
+      });
+
+    document
+      .getElementById("subtitle-delay-increase")
+      ?.addEventListener("click", () => {
+        this.log("Increase button clicked");
+        this.adjustSubtitleDelay(0.1);
+      });
+
+    document
+      .getElementById("subtitle-delay-decrease-large")
+      ?.addEventListener("click", () => {
+        this.log("Large decrease button clicked");
+        this.adjustSubtitleDelay(-1.0);
+      });
+
+    document
+      .getElementById("subtitle-delay-increase-large")
+      ?.addEventListener("click", () => {
+        this.log("Large increase button clicked");
+        this.adjustSubtitleDelay(1.0);
+      });
+
+    document
+      .getElementById("subtitle-delay-reset")
+      ?.addEventListener("click", (e) => {
+        e.stopPropagation(); // Prevent event bubbling
+        this.log("Reset button clicked");
+        this.resetSubtitleDelay();
+      });
+
+    // Update the delay display with current value
+    this.updateDelayDisplay();
 
     // Close menu when clicking outside
     document.addEventListener("click", (e) => {
@@ -462,6 +862,11 @@ class SubtitlesManager {
     if (!videoPath) {
       return;
     }
+
+    // Reset subtitle delays when loading a new video
+    this.subtitleDelay = 0;
+    this.store.set("subtitleDelay", 0);
+    this.updateDelayDisplay();
 
     this.currentVideoPath = videoPath;
     const videoDir = path.dirname(videoPath);
@@ -682,7 +1087,7 @@ class SubtitlesManager {
       if (isEmbedded) {
         track.dataset.streamIndex = embedInfo.index;
       }
-      track.mode = "disabled";
+      track.mode = "disabled"; // Start with disabled mode
 
       this.mediaPlayer.appendChild(track);
       if (!this.currentSubtitles.includes(filePath)) {
@@ -694,7 +1099,7 @@ class SubtitlesManager {
         setTimeout(() => {
           track.track.mode = "showing";
           this.activeTrack = track.track;
-        }, 100);
+        }, 50);
       }
       // Otherwise restore the previously active track if there was one
       else if (activeTrackPath && this.activeTrack) {
@@ -706,11 +1111,10 @@ class SubtitlesManager {
             currentActiveTrack.track.mode = "showing";
             this.activeTrack = currentActiveTrack.track;
           }
-        }, 100);
+        }, 50);
       }
 
       this.updateSubtitleMenu();
-
       return track;
     } catch (error) {
       console.error("Error adding subtitle track:", error);
@@ -747,13 +1151,14 @@ class SubtitlesManager {
         return url;
       }
 
-      // Handle other formats using existing srt2vtt
+      // Handle SRT and other formats using existing srt2vtt
       return new Promise((resolve, reject) => {
         const chunks = [];
         createReadStream(filePath)
           .pipe(srt2vtt())
           .on("data", (chunk) => chunks.push(chunk))
           .on("end", () => {
+            // Ensure subtitle content doesn't have timing issues
             const blob = new Blob(chunks, { type: "text/vtt" });
             const url = URL.createObjectURL(blob);
             this.subtitleCache.set(filePath, url);
@@ -765,6 +1170,38 @@ class SubtitlesManager {
       console.error("Error converting subtitle:", error);
       throw error;
     }
+  }
+
+  resetSubtitleTimingSystem() {
+    // Clear cached subtitle URLs
+    for (const [, url] of this.subtitleCache) {
+      if (url.startsWith("blob:")) {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    this.subtitleCache.clear();
+    this.subtitleDelay = 0;
+    this.store.set("subtitleDelay", 0);
+    this.store.set("lastSubtitleDelay", 0);
+
+    // If there's an active subtitle, reload it
+    if (this.activeTrack) {
+      const trackElements = Array.from(
+        this.mediaPlayer.getElementsByTagName("track"),
+      );
+      const activeTrack = trackElements.find(
+        (track) => track.track === this.activeTrack,
+      );
+      if (activeTrack) {
+        const filePath = activeTrack.dataset.originalPath;
+        setTimeout(() => {
+          this.setActiveSubtitle(filePath);
+        }, 100);
+      }
+    }
+
+    this.updateDelayDisplay();
   }
 
   async ttmlToVTT(ttmlContent) {
@@ -927,6 +1364,11 @@ class SubtitlesManager {
             } else {
               this.subtitleHistory[this.currentVideoPath] = filePath;
             }
+          }
+
+          // Only apply subtitle delay if there's an actual non-zero delay set
+          if (this.subtitleDelay !== 0) {
+            this.applySubtitleDelay();
           }
 
           this.saveSubtitleState();

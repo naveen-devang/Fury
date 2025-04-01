@@ -168,11 +168,12 @@ body {
 /* Time Control Row */
 .time-control-row {
     position: relative;
-    padding: 15px 0;
+    padding: 10px 0;
     margin-bottom: 0;
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 10px;
+    flex-wrap: nowrap;
 }
 
 /* Time slider styles */
@@ -286,7 +287,9 @@ body {
 .main-controls {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 8px; /* Reduce from 15px */
+    flex-shrink: 0;
+    flex-wrap: nowrap;
 }
 
 .controls-container {
@@ -295,7 +298,8 @@ body {
     gap: 10px;
     padding: 10px 0;
     justify-content: space-between;
-    min-width: 460px; /* Minimum width for controls */
+    min-width: 460px;
+    flex-wrap: nowrap;
 }
 
 .playback-controls {
@@ -351,10 +355,11 @@ body {
 .volume-control {
     display: flex;
     align-items: center;
-    gap: 8px;
-    min-width: 80px;
+    gap: 4px;
+    min-width: 36px;
     width: 120px;
-    transition: width 0.3s ease;
+    transition: width 0.1s ease;
+    flex-shrink: 1;
 }
 
 #volume-slider {
@@ -435,6 +440,9 @@ body {
     #volume-slider {
         width: 60px;
     }
+    .right-controls {
+        gap: 5px;
+    }
 }
 
 @media (max-width: 860px) {
@@ -444,14 +452,36 @@ body {
     #volume-slider {
         width: 40px;
     }
+    .right-controls {
+        gap: 3px;
+    }
 }
 
 @media (max-width: 800px) {
-    .volume-control {
-        width: 36px; /* Just enough for the mute button */
+    /* When playlist is shown */
+    .app-container:not(.playlist-hidden) .volume-control {
+        width: 36px !important;
+        min-width: 36px !important;
     }
-    #volume-slider {
+
+    .app-container:not(.playlist-hidden) #volume-slider {
         display: none;
+        width: 0 !important;
+    }
+
+    /* Keep volume slider visible when playlist is hidden */
+    .app-container.playlist-hidden .volume-control {
+        width: 120px !important;
+    }
+
+    .app-container.playlist-hidden #volume-slider {
+        display: block;
+        width: 80px !important;
+    }
+
+    /* Fix gap between controls */
+    .advanced-options {
+        gap: 4px;
     }
 }
 
@@ -472,12 +502,35 @@ select {
     cursor: pointer;
 }
 
+@media (max-width: 600px) {
+    .control-button {
+        width: 32px;
+        height: 32px;
+        padding: 6px;
+    }
+
+    .control-button svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    .controls-container {
+        gap: 5px;
+    }
+
+    .playback-controls,
+    .advanced-options {
+        gap: 4px;
+    }
+}
+
 /* Right Controls */
 .right-controls {
     margin-left: auto;
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 8px;
+    flex-shrink: 0;
 }
 
 .resume-dialog {
@@ -534,10 +587,17 @@ select {
 
 #playlist-panel.hidden {
     transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
 }
 
 #toggle-playlist.active {
     color: var(--primary-color);
+}
+
+#toggle-playlist {
+    position: relative;
+    z-index: 101; /* Higher than playlist panel */
 }
 
 .app-container.playlist-hidden #playlist-panel {
@@ -546,6 +606,7 @@ select {
     top: 0;
     bottom: 0;
     z-index: 100;
+    transform: translateX(100%);
 }
 
 .playlist-header {
@@ -593,6 +654,63 @@ select {
     gap: 8px;
     align-items: center;
     padding: 8px;
+}
+
+.subtitle-delay-controls {
+    margin: 10px 0;
+    padding: 10px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.subtitle-delay-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+
+#subtitle-delay-display {
+    font-weight: bold;
+}
+
+#subtitle-delay-display.active {
+    color: var(--primary-color);
+}
+
+.subtitle-delay-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.subtitle-delay-buttons button {
+    flex: 1;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    font-size: 12px;
+}
+
+.subtitle-delay-buttons button:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+#subtitle-delay-reset {
+    background: rgba(255, 102, 0, 0.2);
+    color: var(--primary-color);
+}
+
+#subtitle-delay-reset:hover {
+    background: rgba(255, 102, 0, 0.3);
+}
+
+.subtitle-delay-buttons.secondary button {
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .title {
@@ -704,7 +822,7 @@ button:hover {
 .player-section {
     flex: 1;
     display: flex;
-    min-width: 480px;
+    min-width: 460px;
     flex-direction: column;
 }
 

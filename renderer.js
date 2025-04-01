@@ -66,6 +66,7 @@ let lastSeekUpdate = 0;
 let isDragging = false;
 let animationFrame;
 let lastVolume = store.get("lastVolume", 0.5); // 50%
+let volumeChanged = false;
 
 const rememberPlayback = store.get("rememberPlayback", true); // Default to true for existing users
 
@@ -466,6 +467,14 @@ function changePlaybackSpeed() {
   mediaPlayer.playbackRate = parseFloat(playbackSpeedSelect.value);
 }
 
+function updateVolumeIcon(volume) {
+  if (volume === 0) {
+    muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
+  } else {
+    muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>`;
+  }
+}
+
 // Keyboard shortcuts
 document.addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT") return;
@@ -498,6 +507,7 @@ document.addEventListener("keydown", (e) => {
       volumeSlider.style.setProperty("--volume-percent", volumeSlider.value);
       lastVolume = mediaPlayer.volume;
       store.set("lastVolume", lastVolume);
+      volumeChanged = true; // Set this to true
       if (mediaPlayer.volume === 0) {
         muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
       } else {
@@ -510,6 +520,7 @@ document.addEventListener("keydown", (e) => {
       volumeSlider.style.setProperty("--volume-percent", volumeSlider.value);
       lastVolume = mediaPlayer.volume;
       store.set("lastVolume", lastVolume);
+      volumeChanged = true; // Set this to true
       if (mediaPlayer.volume === 0) {
         muteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`;
       } else {
@@ -518,9 +529,10 @@ document.addEventListener("keydown", (e) => {
       break;
     case "KeyM":
       toggleMute();
+      volumeChanged = true;
       break;
     case "KeyF":
-      e.preventDefault(); // Prevent default F key behavior
+      e.preventDefault();
       toggleFullscreen();
       break;
     case "KeyL":
@@ -534,6 +546,21 @@ document.addEventListener("keydown", (e) => {
       playlistPanel.classList.toggle("hidden");
       togglePlaylistButton.classList.toggle("active");
       appContainer.classList.toggle("playlist-hidden");
+      break;
+    case "BracketLeft":
+      if (window.subtitlesManager) {
+        window.subtitlesManager.adjustSubtitleDelay(-0.1);
+      }
+      break;
+    case "BracketRight":
+      if (window.subtitlesManager) {
+        window.subtitlesManager.adjustSubtitleDelay(0.1);
+      }
+      break;
+    case "Backslash":
+      if (window.subtitlesManager) {
+        window.subtitlesManager.resetSubtitleDelay();
+      }
       break;
 
     // Add number keys for seeking (0-9 -> 0% - 90%)
