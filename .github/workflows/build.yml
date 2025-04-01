@@ -63,6 +63,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4 # Checkout the repo
 
+      - name: Download macOS Build
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-build
+          path: dist/
+
+      - name: Download Windows Build
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist/
+
+      - name: Debug - List dist files before release
+        run: ls -l dist/
+
       - name: Upload Release to GitHub
         uses: softprops/action-gh-release@v2 # GitHub release action
         with:
