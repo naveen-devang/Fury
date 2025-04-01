@@ -6,6 +6,9 @@ on:
     tags:
       - "v*" # Runs only when a new version tag is pushed
 
+permissions:
+  contents: write # Allows the workflow to create a GitHub release
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
