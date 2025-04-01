@@ -1,57 +1,67 @@
-name: Build App
+name: Build and Release Electron App
 
 on:
   push:
-    branches:
-      - main # Runs on push to main branch
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch: # Allows manual trigger
+    # Trigger the workflow for tags matching "v*"
+    tags:
+      - "v*" # Runs only when a new version tag is pushed
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
 
+    # Matrix to run on both macOS and Windows
     strategy:
       matrix:
-        os: [macos-latest, windows-latest] # Runs on both Mac & Windows
+        os: [macos-latest, windows-latest] # macOS & Windows builds
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 # Checkout the repo
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v4 # Set up Node.js environment
         with:
-          node-version: 21 # Use the same version as your project
-          cache: "npm"
+          node-version: 23.10.0 # Use the same Node.js version as your project
+          cache: "npm" # Cache npm dependencies for faster builds
 
       - name: Install Dependencies
-        run: npm install
+        run: npm install # Install the project dependencies
 
       - name: Build for macOS
-        if: matrix.os == 'macos-latest'
-        run: npx electron-builder --mac
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        if: matrix.os == 'macos-latest' # Build for macOS
+        run: npx electron-builder --mac --publish never # Build macOS app
 
       - name: Build for Windows
-        if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        if: matrix.os == 'windows-latest' # Build for Windows
+        run: npx electron-builder --win --publish never # Build Windows app
 
+      # Upload macOS build artifact
       - name: Upload macOS Build
         if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: mac-build
-          path: dist/*.dmg
+          path: dist/*.dmg # Upload .dmg file to GitHub artifacts
 
+      # Upload Windows build artifact
       - name: Upload Windows Build
         if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: dist/*.exe
+          path: dist/*.exe # Upload .exe file to GitHub artifacts
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest # Release job runs on an Ubuntu machine
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4 # Checkout the repo
+
+      - name: Upload Release to GitHub
+        uses: softprops/action-gh-release@v2 # GitHub release action
+        with:
+          files: dist/*.dmg, dist/*.exe # Attach macOS and Windows builds
+          token: ${{ secrets.GITHUB_TOKEN }} # GitHub token to authenticate
