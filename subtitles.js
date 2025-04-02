@@ -98,6 +98,9 @@ class SubtitlesManager {
     this.subtitleDelay = this.store.get("subtitleDelay", 0);
     this.lastSubtitleDelay = this.store.get("lastSubtitleDelay", 0);
 
+    this.videoSubtitleMapping = store.get("videoSubtitleMapping", {});
+    this.currentVideoPath = null;
+
     // Rest of the constructor remains the same as in previous implementation
     this.mediaPlayer = mediaPlayer;
     this.currentSubtitles = [];
@@ -147,6 +150,7 @@ class SubtitlesManager {
     // Add event listener for when the window closes
     window.addEventListener("beforeunload", () => {
       this.saveSubtitleState();
+      store.set("videoSubtitleMapping", this.videoSubtitleMapping);
       store.set(
         "extractedSubtitlesCache",
         Object.fromEntries(this.extractedEmbeddedSubtitles),
@@ -680,6 +684,8 @@ class SubtitlesManager {
     } else {
       this.store.delete("lastUsedLanguage");
     }
+
+    store.set("videoSubtitleMapping", this.videoSubtitleMapping);
   }
 
   initializeSubtitleMenu() {
@@ -848,6 +854,23 @@ class SubtitlesManager {
   async loadSubtitleFile() {
     const result = await ipcRenderer.invoke("open-subtitle-file");
     if (result.filePaths.length > 0) {
+      // Associate this subtitle with the current video
+      if (this.currentVideoPath) {
+        // Save the association
+        this.videoSubtitleMapping[this.currentVideoPath] =
+          this.videoSubtitleMapping[this.currentVideoPath] || [];
+
+        // Add if not already present
+        if (
+          !this.videoSubtitleMapping[this.currentVideoPath].includes(
+            result.filePaths[0],
+          )
+        ) {
+          this.videoSubtitleMapping[this.currentVideoPath].push(
+            result.filePaths[0],
+          );
+        }
+      }
       await this.addSubtitleTrack(result.filePaths[0]);
     }
   }
@@ -899,12 +922,14 @@ class SubtitlesManager {
       return;
     }
 
+    // Store current video path
+    this.currentVideoPath = videoPath;
+
     // Reset subtitle delays when loading a new video
     this.subtitleDelay = 0;
     this.store.set("subtitleDelay", 0);
     this.updateDelayDisplay();
 
-    this.currentVideoPath = videoPath;
     const videoDir = path.dirname(videoPath);
     const videoName = path.parse(videoPath).name;
 
@@ -1045,6 +1070,29 @@ class SubtitlesManager {
         if (!hasProcessedPreferredSubtitle && historicalSubtitle === fullPath) {
           await this.setActiveSubtitle(fullPath);
           hasProcessedPreferredSubtitle = true;
+        }
+      }
+
+      // ADDED: Load manually associated external subtitles from other locations
+      if (this.videoSubtitleMapping[videoPath]) {
+        for (const subtitlePath of this.videoSubtitleMapping[videoPath]) {
+          try {
+            // Check if the file exists before adding
+            if (await this.fileExists(subtitlePath)) {
+              await this.addSubtitleTrack(subtitlePath, false);
+
+              // Activate this subtitle if it was historically selected
+              if (
+                !hasProcessedPreferredSubtitle &&
+                historicalSubtitle === subtitlePath
+              ) {
+                await this.setActiveSubtitle(subtitlePath);
+                hasProcessedPreferredSubtitle = true;
+              }
+            }
+          } catch (error) {
+            console.error("Error loading associated subtitle:", error);
+          }
         }
       }
 
@@ -1446,45 +1494,97 @@ class SubtitlesManager {
       : null;
 
     trackList.innerHTML = `
-            <div class="subtitle-item ${!activeTrackElement ? "active" : ""}" data-path="">
-                Off
-            </div>
-            <div class="subtitle-section">
-                ${Array.from(this.mediaPlayer.getElementsByTagName("track"))
-                  .filter((track) => track.dataset.isEmbedded === "true")
-                  .map(
-                    (track) => `
-                        <div class="subtitle-item ${track === activeTrackElement ? "active" : ""}"
-                             data-path="${track.dataset.originalPath.replace(/"/g, "&quot;")}"
-                             data-embedded="true"
-                             data-stream-index="${track.dataset.streamIndex}">
-                            ${track.label}
-                        </div>
-                    `,
-                  )
-                  .join("")}
-            </div>
-            <div class="subtitle-section">
-                ${Array.from(this.mediaPlayer.getElementsByTagName("track"))
-                  .filter((track) => track.dataset.isEmbedded !== "true")
-                  .map(
-                    (track) => `
-                        <div class="subtitle-item ${track === activeTrackElement ? "active" : ""}"
-                             data-path="${track.dataset.originalPath.replace(/"/g, "&quot;")}">
-                            ${track.label}
-                        </div>
-                    `,
-                  )
-                  .join("")}
-            </div>
-        `;
+              <div class="subtitle-item ${!activeTrackElement ? "active" : ""}" data-path="">
+                  Off
+              </div>
+              <div class="subtitle-section">
+                  ${Array.from(this.mediaPlayer.getElementsByTagName("track"))
+                    .filter((track) => track.dataset.isEmbedded === "true")
+                    .map(
+                      (track) => `
+                          <div class="subtitle-item ${track === activeTrackElement ? "active" : ""}"
+                               data-path="${track.dataset.originalPath.replace(/"/g, "&quot;")}"
+                               data-embedded="true"
+                               data-stream-index="${track.dataset.streamIndex}">
+                              <span class="subtitle-label">${track.label}</span>
+                          </div>
+                      `,
+                    )
+                    .join("")}
+              </div>
+              <div class="subtitle-section">
+                  ${Array.from(this.mediaPlayer.getElementsByTagName("track"))
+                    .filter((track) => track.dataset.isEmbedded !== "true")
+                    .map(
+                      (track) => `
+                          <div class="subtitle-item ${track === activeTrackElement ? "active" : ""}"
+                               data-path="${track.dataset.originalPath.replace(/"/g, "&quot;")}">
+                              <span class="subtitle-label">${track.label}</span>
+                              <button class="subtitle-delete-btn" title="Remove subtitle">×</button>
+                          </div>
+                      `,
+                    )
+                    .join("")}
+              </div>
+          `;
 
-    // Add click handlers
+    // Add click handlers for selecting subtitles
     trackList.querySelectorAll(".subtitle-item").forEach((item) => {
       item.addEventListener("click", async (e) => {
+        // Only handle clicks on the item itself or the label, not the delete button
+        if (!e.target.classList.contains("subtitle-delete-btn")) {
+          e.stopPropagation();
+          const path = item.dataset.path;
+          await this.setActiveSubtitle(path || null);
+        }
+      });
+    });
+
+    // Add click handlers for delete buttons
+    trackList.querySelectorAll(".subtitle-delete-btn").forEach((button) => {
+      button.addEventListener("click", async (e) => {
         e.stopPropagation();
-        const path = item.dataset.path;
-        await this.setActiveSubtitle(path || null);
+        const subtitleItem = button.closest(".subtitle-item");
+        const path = subtitleItem.dataset.path;
+
+        // If this is the active subtitle, turn it off first
+        if (subtitleItem.classList.contains("active")) {
+          await this.setActiveSubtitle(null);
+        }
+
+        // Remove from mapping
+        if (
+          this.currentVideoPath &&
+          this.videoSubtitleMapping[this.currentVideoPath]
+        ) {
+          const index =
+            this.videoSubtitleMapping[this.currentVideoPath].indexOf(path);
+          if (index > -1) {
+            this.videoSubtitleMapping[this.currentVideoPath].splice(index, 1);
+
+            // If no more mappings for this video, clean up
+            if (this.videoSubtitleMapping[this.currentVideoPath].length === 0) {
+              delete this.videoSubtitleMapping[this.currentVideoPath];
+            }
+
+            // Save the updated mapping
+            store.set("videoSubtitleMapping", this.videoSubtitleMapping);
+          }
+        }
+
+        // Remove the track element
+        const trackElements = Array.from(
+          this.mediaPlayer.getElementsByTagName("track"),
+        );
+        const targetTrack = trackElements.find(
+          (t) => t.dataset.originalPath === path,
+        );
+        if (targetTrack) {
+          targetTrack.remove();
+        }
+
+        // Update the UI
+        this.updateSubtitleMenu();
       });
     });
   }

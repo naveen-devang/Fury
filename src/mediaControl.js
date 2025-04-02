@@ -90,6 +90,8 @@ function updateVolume() {
   mediaPlayer.volume = volume;
   lastVolume = volume;
 
+  volumeSlider.style.setProperty("--volume-percent", volumeSlider.value);
+
   // Save volume to store
   store.set("lastVolume", volume);
 

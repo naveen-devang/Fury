@@ -134,6 +134,40 @@ document.addEventListener("DOMContentLoaded", () => {
 mediaPlayer.volume = lastVolume;
 volumeSlider.value = lastVolume * 100;
 
+const statusBar = document.getElementById("status-bar");
+let statusTimeout;
+
+ipcRenderer.on("update-status", (event, status) => {
+  // Clear any existing timeout
+  if (statusTimeout) {
+    clearTimeout(statusTimeout);
+    statusTimeout = null;
+  }
+
+  // Update the status bar
+  if (status.message) {
+    statusBar.textContent = status.message;
+    statusBar.style.display = "block";
+
+    // Add appropriate styling based on status type
+    statusBar.className = "status-bar";
+    if (status.isChecking) statusBar.classList.add("checking");
+    if (status.isDownloading) statusBar.classList.add("downloading");
+    if (status.isUpToDate) statusBar.classList.add("success");
+    if (status.isError) statusBar.classList.add("error");
+
+    // Auto-hide the status after timeout if specified
+    if (status.timeout) {
+      statusTimeout = setTimeout(() => {
+        statusBar.style.display = "none";
+      }, status.timeout);
+    }
+  } else {
+    // Hide the status bar if no message
+    statusBar.style.display = "none";
+  }
+});
+
 const timePreview = document.createElement("div");
 timePreview.className = "time-preview";
 timeSlider.parentElement.appendChild(timePreview);
@@ -894,6 +928,7 @@ async function playFile(filePath) {
   mediaPlayer.src = filePath;
 
   // Detect and load subtitles for the new file
+  subtitlesManager.currentVideoPath = filePath; // Set the current video path explicitly
   subtitlesManager.detectSubtitles(filePath).catch((err) => {
     console.warn("Error loading subtitles:", err);
   });
@@ -1068,6 +1103,8 @@ document.addEventListener("fullscreenchange", handleFullscreenChange);
 document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
 
 function removeFromPlaylist(index) {
+  const videoPath = playlist[index]?.path;
+
   if (index === currentIndex) {
     if (playlist.length === 1) {
       clearPlaylist();
@@ -1084,9 +1121,20 @@ function removeFromPlaylist(index) {
   playlist.splice(index, 1);
   updatePlaylistUI();
   store.set("playlist", playlist);
+
+  if (videoPath && window.subtitlesManager) {
+    if (window.subtitlesManager.videoSubtitleMapping[videoPath]) {
+      delete window.subtitlesManager.videoSubtitleMapping[videoPath];
+      store.set(
+        "videoSubtitleMapping",
+        window.subtitlesManager.videoSubtitleMapping,
+      );
+    }
+  }
 }
 
 function clearPlaylist() {
+  const videoPaths = playlist.map((item) => item.path);
   // Stop any currently playing media
   mediaPlayer.pause();
   // Clear the source to prevent memory leaks
@@ -1108,6 +1156,18 @@ function clearPlaylist() {
 
   // Save empty playlist to store
   store.set("playlist", playlist);
+
+  if (window.subtitlesManager) {
+    videoPaths.forEach((path) => {
+      if (window.subtitlesManager.videoSubtitleMapping[path]) {
+        delete window.subtitlesManager.videoSubtitleMapping[path];
+      }
+    });
+    store.set(
+      "videoSubtitleMapping",
+      window.subtitlesManager.videoSubtitleMapping,
+    );
+  }
 }
 
 function handleMediaEnd() {

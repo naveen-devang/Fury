@@ -1,4 +1,4 @@
-const { app, dialog } = require("electron");
+const { app, dialog, Notification } = require("electron");
 const { getCurrentTheme } = require("./src/themes");
 const { RELEASE_NOTES } = require("./release-notes");
 const { autoUpdater } = require("electron-updater");
@@ -221,99 +221,97 @@ const createMenuTemplate = (mainWindow) => [
         label: "Check for Updates",
         click: async () => {
           try {
-            // Create a progress dialog without buttons
-            const progressDialog = new BrowserWindow({
-              width: 300,
-              height: 150,
-              parent: mainWindow,
-              modal: true,
-              show: false,
-              resizable: false,
-              minimizable: false,
-              maximizable: false,
-              webPreferences: {
-                nodeIntegration: true,
-                contextIsolation: false,
-              },
-            });
+            // Check if notifications are supported
+            if (Notification.isSupported()) {
+              // Create a notification
+              const notification = new Notification({
+                title: "Checking for Updates",
+                body: "Please wait while checking for updates...",
+              });
+              notification.show();
+            } else {
+              // Fallback for systems where notifications aren't supported
+              mainWindow.webContents.send(
+                "update-message",
+                "Checking for updates...",
+              );
+            }
 
-            // Create a simple HTML content for the progress dialog
-            progressDialog.loadURL(`data:text/html,
-              <html>
-                <body style="display:flex;justify-content:center;align-items:center;height:100vh;font-family:system-ui;">
-                  <div style="text-align:center;">
-                    <p>Checking for updates...</p>
-                    <progress></progress>
-                  </div>
-                </body>
-              </html>
-            `);
+            try {
+              // Start update check
+              const updateCheckResult = await autoUpdater.checkForUpdates();
 
-            progressDialog.once("ready-to-show", () => {
-              progressDialog.show();
-            });
+              // We don't need to close the notification as it will auto-dismiss
 
-            // Start update check
-            mainWindow.webContents.send(
-              "update-message",
-              "Checking for updates...",
-            );
-            const updateCheckResult = await autoUpdater.checkForUpdates();
+              if (updateCheckResult && updateCheckResult.updateInfo) {
+                const newVersion = updateCheckResult.updateInfo.version;
+                const currentVersion = app.getVersion();
 
-            // Close the progress dialog
-            progressDialog.close();
+                if (newVersion !== currentVersion) {
+                  let message = `New Version Available: ${newVersion}\n\nRelease Notes:\n`;
 
-            if (updateCheckResult && updateCheckResult.updateInfo) {
-              const newVersion = updateCheckResult.updateInfo.version;
-              const currentVersion = app.getVersion();
+                  if (RELEASE_NOTES && RELEASE_NOTES[newVersion]) {
+                    message += "• " + RELEASE_NOTES[newVersion].join("\n• ");
+                  } else if (updateCheckResult.updateInfo.releaseNotes) {
+                    // Instead of using sanitizeHtml, just use simple text extraction
+                    const plainTextNotes =
+                      updateCheckResult.updateInfo.releaseNotes
+                        .replace(/<[^>]*>/g, "") // Remove HTML tags
+                        .replace(/&nbsp;/g, " ") // Replace common HTML entities
+                        .replace(/&lt;/g, "<")
+                        .replace(/&gt;/g, ">")
+                        .replace(/&amp;/g, "&");
 
-              if (newVersion !== currentVersion) {
-                let message = `New Version Available: ${newVersion}\n\nRelease Notes:\n`;
+                    message += plainTextNotes;
+                  } else {
+                    message += "No release notes available for new version.";
+                  }
 
-                if (RELEASE_NOTES && RELEASE_NOTES[newVersion]) {
-                  message += "• " + RELEASE_NOTES[newVersion].join("\n• ");
-                } else if (updateCheckResult.updateInfo.releaseNotes) {
-                  const sanitizedNotes = sanitizeHtml(
-                    updateCheckResult.updateInfo.releaseNotes,
+                  const downloadChoice = await dialog.showMessageBox(
+                    mainWindow,
+                    {
+                      title: "Update Available",
+                      message: message,
+                      buttons: ["Download Update", "Later"],
+                      defaultId: 0,
+                      cancelId: 1,
+                      detail: "Would you like to download the new version?",
+                    },
                   );
-                  message += sanitizedNotes;
+
+                  if (downloadChoice.response === 0) {
+                    dialog.showMessageBox(mainWindow, {
+                      title: "Downloading Update",
+                      message:
+                        "The update is being downloaded in the background. You'll be notified when it's ready to install.",
+                      buttons: ["OK"],
+                    });
+
+                    mainWindow.webContents.send(
+                      "update-message",
+                      "Downloading update...",
+                    );
+                    autoUpdater.downloadUpdate();
+                  }
                 } else {
-                  message += "No release notes available for new version.";
-                }
-
-                const downloadChoice = await dialog.showMessageBox(mainWindow, {
-                  title: "Update Available",
-                  message: message,
-                  buttons: ["Download Update", "Later"],
-                  defaultId: 0,
-                  cancelId: 1,
-                  detail: "Would you like to download the new version?",
-                });
-
-                if (downloadChoice.response === 0) {
                   dialog.showMessageBox(mainWindow, {
-                    title: "Downloading Update",
-                    message:
-                      "The update is being downloaded in the background. You'll be notified when it's ready to install.",
+                    title: "No Updates Available",
+                    message: "You are using the latest version.",
                     buttons: ["OK"],
                   });
-
-                  mainWindow.webContents.send(
-                    "update-message",
-                    "Downloading update...",
-                  );
-                  autoUpdater.downloadUpdate();
                 }
-              } else {
-                dialog.showMessageBox(mainWindow, {
-                  title: "No Updates Available",
-                  message: "You are using the latest version.",
-                  buttons: ["OK"],
-                });
               }
+            } catch (error) {
+              console.error("Error checking for updates:", error);
+              dialog.showMessageBox(mainWindow, {
+                title: "Update Error",
+                message: "Failed to check for updates.",
+                detail: error.message,
+                buttons: ["OK"],
+              });
             }
           } catch (error) {
-            console.error("Error checking for updates:", error);
+            console.error("Error initiating update check:", error);
             dialog.showMessageBox(mainWindow, {
               title: "Update Error",
               message: "Failed to check for updates.",
