@@ -14,22 +14,52 @@ const path = require("path");
 
 function initializeFfmpeg() {
   try {
+    let ffmpegBinary;
+    let ffprobeBinary;
+
     if (!app.isPackaged) {
       // Development mode
       ffmpegBinary = require("ffmpeg-static");
       ffprobeBinary = require("ffprobe-static").path;
     } else {
       // Production mode
-      const ffmpegBinaryDir = path.join(
-        process.resourcesPath,
-        "ffmpeg-binaries",
-      );
-      const isWin = process.platform === "win32";
-      const ffmpegExt = isWin ? ".exe" : "";
-      const ffprobeExt = isWin ? ".exe" : "";
+      if (process.platform === "darwin") {
+        // For macOS, determine architecture (arm64 vs x64)
+        const arch = process.arch; // 'arm64' or 'x64'
 
-      ffmpegBinary = path.join(ffmpegBinaryDir, `ffmpeg${ffmpegExt}`);
-      ffprobeBinary = path.join(ffmpegBinaryDir, `ffprobe${ffprobeExt}`);
+        ffmpegBinary = path.join(
+          process.resourcesPath,
+          "app.asar.unpacked",
+          "node_modules",
+          "ffmpeg-static",
+          "ffmpeg",
+        );
+
+        ffprobeBinary = path.join(
+          process.resourcesPath,
+          "app.asar.unpacked",
+          "node_modules",
+          "ffprobe-static",
+          "bin",
+          "darwin",
+          arch, // This will be either 'arm64' or 'x64'
+          "ffprobe",
+        );
+
+        console.log(`Using macOS ${arch} architecture for ffprobe`);
+      } else {
+        // For Windows and Linux, use the existing approach
+        const ffmpegBinaryDir = path.join(
+          process.resourcesPath,
+          "ffmpeg-binaries",
+        );
+        const isWin = process.platform === "win32";
+        const ffmpegExt = isWin ? ".exe" : "";
+        const ffprobeExt = isWin ? ".exe" : "";
+
+        ffmpegBinary = path.join(ffmpegBinaryDir, `ffmpeg${ffmpegExt}`);
+        ffprobeBinary = path.join(ffmpegBinaryDir, `ffprobe${ffprobeExt}`);
+      }
     }
 
     // Set FFmpeg paths
@@ -39,11 +69,17 @@ function initializeFfmpeg() {
     // Verify the paths exist
     const fs = require("fs");
     if (!fs.existsSync(ffmpegBinary)) {
+      console.error(`FFmpeg binary not found at: ${ffmpegBinary}`);
       throw new Error(`FFmpeg binary not found at: ${ffmpegBinary}`);
     }
     if (!fs.existsSync(ffprobeBinary)) {
+      console.error(`FFprobe binary not found at: ${ffprobeBinary}`);
       throw new Error(`FFprobe binary not found at: ${ffprobeBinary}`);
     }
+
+    console.log("FFmpeg initialized successfully");
+    console.log("FFmpeg path:", ffmpegBinary);
+    console.log("FFprobe path:", ffprobeBinary);
 
     return true;
   } catch (error) {
