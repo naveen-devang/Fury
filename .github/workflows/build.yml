@@ -33,11 +33,11 @@ jobs:
 
       - name: Build for macOS
         if: matrix.os == 'macos-latest' # Build for macOS
-        run: npx electron-builder --mac --publish never # Build macOS app
+        run: npx electron-builder --mac --publish never --config.publish.provider=github # Build macOS app
 
       - name: Build for Windows
         if: matrix.os == 'windows-latest' # Build for Windows
-        run: npx electron-builder --win --publish never # Build Windows app
+        run: npx electron-builder --win --publish never --config.publish.provider=github # Build Windows app
 
       # Upload macOS build artifact
       - name: Upload macOS Build

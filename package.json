@@ -1,6 +1,6 @@
 {
   "name": "fury",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Media player",
   "main": "main.js",
   "scripts": {
@@ -67,6 +67,8 @@
     },
     "publish": {
       "provider": "github",
+      "repo": "https://github.com/naveen-devang/Fury.git",
+      "releaseType": "release",
       "private": false
     }
   }
