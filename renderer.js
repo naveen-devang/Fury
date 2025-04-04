@@ -735,51 +735,76 @@ function updatePlaylistUI() {
   const playlistContainer = document.createElement("div");
   playlistContainer.className = "playlist-container";
 
-  playlist.forEach((item, index) => {
-    const element = document.createElement("div");
-    element.className = `playlist-item ${index === currentIndex ? "active" : ""}`;
-    element.draggable = true;
-    element.dataset.index = index;
-    element.innerHTML = `
-            <div class="playlist-item-content">
-                <span class="title">${item.metadata.title}</span>
-                <div class="playlist-item-controls">
-                    <span class="duration">${formatTime(item.metadata.duration)}</span>
-                    <button class="remove-button">X</button>
-                </div>
-            </div>
-        `;
+  // Show empty state if playlist is empty
+  if (playlist.length === 0) {
+    const emptyState = document.createElement("div");
+    emptyState.className = "playlist-empty";
+    emptyState.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 18V5l12-2v13"></path>
+        <circle cx="6" cy="18" r="3"></circle>
+        <circle cx="18" cy="16" r="3"></circle>
+      </svg>
+      <p>Drop media files here<br />to start playing</p>
+    `;
+    playlistContainer.appendChild(emptyState);
+  } else {
+    playlist.forEach((item, index) => {
+      const element = document.createElement("div");
+      element.className = `playlist-item ${index === currentIndex ? "active" : ""}`;
+      element.draggable = true;
+      element.dataset.index = index;
+      element.innerHTML = `
+        <div class="playlist-item-content">
+          <span class="title">${item.metadata.title}</span>
+          <div class="playlist-item-controls">
+            <span class="duration">${formatTime(item.metadata.duration)}</span>
+            <button class="remove-button">X</button>
+          </div>
+        </div>
+      `;
 
-    element.addEventListener("dragstart", handleDragStart);
-    element.addEventListener("dragend", handleDragEnd);
-    element
-      .querySelector(".playlist-item-content")
-      .addEventListener("click", (e) => {
-        if (!e.target.classList.contains("remove-button")) {
-          currentIndex = index;
-          playFile(item.path);
-        }
+      element.addEventListener("dragstart", handleDragStart);
+      element.addEventListener("dragend", handleDragEnd);
+      element
+        .querySelector(".playlist-item-content")
+        .addEventListener("click", (e) => {
+          if (!e.target.classList.contains("remove-button")) {
+            currentIndex = index;
+            playFile(item.path);
+          }
+        });
+
+      element.querySelector(".remove-button").addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeFromPlaylist(index);
       });
 
-    element.querySelector(".remove-button").addEventListener("click", (e) => {
-      e.stopPropagation();
-      removeFromPlaylist(index);
+      playlistContainer.appendChild(element);
     });
 
-    playlistContainer.appendChild(element);
+    // Add bottom drop zone only if there are items
+    const bottomDropZone = document.createElement("div");
+    bottomDropZone.className = "bottom-drop-zone";
+    playlistContainer.appendChild(bottomDropZone);
+  }
+
+  // Add drag over styling to the entire container
+  playlistContainer.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    playlistContainer.classList.add("drag-over");
   });
 
-  // Add bottom drop zone
-  const bottomDropZone = document.createElement("div");
-  bottomDropZone.className = "bottom-drop-zone";
-  bottomDropZone.style.height = "50px";
-  playlistContainer.appendChild(bottomDropZone);
+  playlistContainer.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    playlistContainer.classList.remove("drag-over");
+  });
+
+  playlistContainer.addEventListener("drop", handleDrop);
 
   playlistElement.appendChild(playlistContainer);
-
-  // Container-level drag events
-  playlistContainer.addEventListener("dragover", handleDragOver);
-  playlistContainer.addEventListener("drop", handleDrop);
 }
 
 let draggedElement = null;
@@ -843,6 +868,29 @@ function handleDrop(e) {
   e.preventDefault();
   e.stopPropagation();
 
+  // Check if this is a file drop (from outside the app)
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    const files = Array.from(e.dataTransfer.files).filter((file) => {
+      const ext = path.extname(file.path).toLowerCase();
+      return supportedFormats.includes(ext);
+    });
+
+    if (files.length > 0) {
+      const promises = files.map((file) => addToPlaylist(file.path));
+
+      if (currentIndex === -1) {
+        currentIndex = 0;
+        playFile(files[0].path);
+      }
+
+      Promise.allSettled(promises).then(() => {
+        store.set("playlist", playlist);
+      });
+    }
+    return;
+  }
+
+  // Existing playlist reordering logic
   if (!draggedElement) return;
 
   const draggedIndex = parseInt(draggedElement.dataset.index);
@@ -852,15 +900,12 @@ function handleDrop(e) {
   ];
   const mouseY = e.clientY;
 
-  // Find drop position
   let dropIndex;
   const lastItem = items[items.length - 1];
 
   if (lastItem && mouseY > lastItem.getBoundingClientRect().bottom) {
-    // If dropping below last item, set to end of playlist
     dropIndex = playlist.length;
   } else {
-    // Find position between items
     for (let i = 0; i < items.length; i++) {
       const box = items[i].getBoundingClientRect();
       if (mouseY < box.top + box.height / 2) {
@@ -868,13 +913,11 @@ function handleDrop(e) {
         break;
       }
     }
-    // If no position found above items, use last position
     if (dropIndex === undefined) {
       dropIndex = playlist.length;
     }
   }
 
-  // Update playlist array
   const [movedItem] = playlist.splice(draggedIndex, 1);
   playlist.splice(
     dropIndex > draggedIndex ? dropIndex - 1 : dropIndex,
@@ -882,7 +925,6 @@ function handleDrop(e) {
     movedItem,
   );
 
-  // Update currentIndex
   if (currentIndex === draggedIndex) {
     currentIndex = dropIndex > draggedIndex ? dropIndex - 1 : dropIndex;
   } else if (draggedIndex < currentIndex && dropIndex > currentIndex) {
