@@ -1,4 +1,4 @@
-const { app, dialog, Notification } = require("electron");
+const { app, dialog } = require("electron");
 const { getCurrentTheme } = require("./src/themes");
 const { RELEASE_NOTES } = require("./release-notes");
 const { autoUpdater } = require("electron-updater");
@@ -182,28 +182,67 @@ const createMenuTemplate = (mainWindow) => [
       },
       {
         label: "Release Notes",
-        click: () => {
+        click: async () => {
           const currentVersion = app.getVersion();
-          let message = `Current Version: ${currentVersion}\n\nRelease Notes:\n`;
+          let message = `Current Version: ${currentVersion}\n\nCurrent Release Notes:\n`;
 
-          // First try to get GitHub release notes for current version
-          const githubNotes = store.get(`githubReleaseNotes.${currentVersion}`);
-
-          if (githubNotes) {
-            // Use GitHub release notes if available
-            message += githubNotes;
-          } else if (RELEASE_NOTES && RELEASE_NOTES[currentVersion]) {
-            // Fall back to local release notes if GitHub notes not available
-            message += "• " + RELEASE_NOTES[currentVersion].join("\n• ");
+          // Add current version's release notes
+          if (RELEASE_NOTES && RELEASE_NOTES[currentVersion]) {
+            message +=
+              "• " + RELEASE_NOTES[currentVersion].join("\n• ") + "\n\n";
           } else {
-            message += "No release notes available for current version.";
+            message += "No release notes available for current version.\n\n";
           }
 
-          dialog.showMessageBox(mainWindow, {
-            title: "Release Notes",
-            message: message,
-            buttons: ["OK"],
-          });
+          try {
+            const updateCheckResult = await autoUpdater.checkForUpdates();
+            if (updateCheckResult && updateCheckResult.updateInfo) {
+              const newVersion = updateCheckResult.updateInfo.version;
+              if (newVersion !== currentVersion) {
+                message += `New Version Available: ${newVersion}\n\nNew Release Notes:\n`;
+                if (RELEASE_NOTES && RELEASE_NOTES[newVersion]) {
+                  message +=
+                    "• " + RELEASE_NOTES[newVersion].join("\n• ") + "\n\n";
+                } else if (updateCheckResult.updateInfo.releaseNotes) {
+                  message += updateCheckResult.updateInfo.releaseNotes + "\n\n";
+                } else {
+                  message += "No release notes available for new version.\n\n";
+                }
+
+                dialog
+                  .showMessageBox(mainWindow, {
+                    title: "Release Notes",
+                    message: message,
+                    buttons: ["Update Now", "Later"],
+                    defaultId: 1,
+                    cancelId: 1,
+                    detail: "Would you like to update to the new version?",
+                  })
+                  .then((result) => {
+                    if (result.response === 0) {
+                      autoUpdater.downloadUpdate();
+                      mainWindow.webContents.send(
+                        "update-message",
+                        "Downloading update...",
+                      );
+                    }
+                  });
+              } else {
+                dialog.showMessageBox(mainWindow, {
+                  title: "Release Notes",
+                  message: message,
+                  buttons: ["OK"],
+                });
+              }
+            }
+          } catch (error) {
+            console.error("Error checking for updates:", error);
+            dialog.showMessageBox(mainWindow, {
+              title: "Release Notes",
+              message: message,
+              buttons: ["OK"],
+            });
+          }
         },
       },
       {
@@ -219,107 +258,7 @@ const createMenuTemplate = (mainWindow) => [
       },
       {
         label: "Check for Updates",
-        click: async () => {
-          try {
-            // Check if notifications are supported
-            if (Notification.isSupported()) {
-              // Create a notification
-              const notification = new Notification({
-                title: "Checking for Updates",
-                body: "Please wait while checking for updates...",
-              });
-              notification.show();
-            } else {
-              // Fallback for systems where notifications aren't supported
-              mainWindow.webContents.send(
-                "update-message",
-                "Checking for updates...",
-              );
-            }
-
-            try {
-              // Start update check
-              const updateCheckResult = await autoUpdater.checkForUpdates();
-
-              // We don't need to close the notification as it will auto-dismiss
-
-              if (updateCheckResult && updateCheckResult.updateInfo) {
-                const newVersion = updateCheckResult.updateInfo.version;
-                const currentVersion = app.getVersion();
-
-                if (newVersion !== currentVersion) {
-                  let message = `New Version Available: ${newVersion}\n\nRelease Notes:\n`;
-
-                  if (RELEASE_NOTES && RELEASE_NOTES[newVersion]) {
-                    message += "• " + RELEASE_NOTES[newVersion].join("\n• ");
-                  } else if (updateCheckResult.updateInfo.releaseNotes) {
-                    // Instead of using sanitizeHtml, just use simple text extraction
-                    const plainTextNotes =
-                      updateCheckResult.updateInfo.releaseNotes
-                        .replace(/<[^>]*>/g, "") // Remove HTML tags
-                        .replace(/&nbsp;/g, " ") // Replace common HTML entities
-                        .replace(/&lt;/g, "<")
-                        .replace(/&gt;/g, ">")
-                        .replace(/&amp;/g, "&");
-
-                    message += plainTextNotes;
-                  } else {
-                    message += "No release notes available for new version.";
-                  }
-
-                  const downloadChoice = await dialog.showMessageBox(
-                    mainWindow,
-                    {
-                      title: "Update Available",
-                      message: message,
-                      buttons: ["Download Update", "Later"],
-                      defaultId: 0,
-                      cancelId: 1,
-                      detail: "Would you like to download the new version?",
-                    },
-                  );
-
-                  if (downloadChoice.response === 0) {
-                    dialog.showMessageBox(mainWindow, {
-                      title: "Downloading Update",
-                      message:
-                        "The update is being downloaded in the background. You'll be notified when it's ready to install.",
-                      buttons: ["OK"],
-                    });
-
-                    mainWindow.webContents.send(
-                      "update-message",
-                      "Downloading update...",
-                    );
-                    autoUpdater.downloadUpdate();
-                  }
-                } else {
-                  dialog.showMessageBox(mainWindow, {
-                    title: "No Updates Available",
-                    message: "You are using the latest version.",
-                    buttons: ["OK"],
-                  });
-                }
-              }
-            } catch (error) {
-              console.error("Error checking for updates:", error);
-              dialog.showMessageBox(mainWindow, {
-                title: "Update Error",
-                message: "Failed to check for updates.",
-                detail: error.message,
-                buttons: ["OK"],
-              });
-            }
-          } catch (error) {
-            console.error("Error initiating update check:", error);
-            dialog.showMessageBox(mainWindow, {
-              title: "Update Error",
-              message: "Failed to check for updates.",
-              detail: error.message,
-              buttons: ["OK"],
-            });
-          }
-        },
+        click: () => mainWindow.webContents.send("check-for-updates"),
       },
       {
         label: "About",

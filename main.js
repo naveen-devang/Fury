@@ -193,16 +193,15 @@ autoUpdater.on("update-available", (info) => {
 
   if (info.releaseNotes) {
     if (typeof info.releaseNotes === "string") {
-      // Clean HTML tags before storing or displaying
-      releaseNotes = sanitizeHtml(info.releaseNotes);
+      releaseNotes = info.releaseNotes;
     } else if (Array.isArray(info.releaseNotes)) {
       releaseNotes = info.releaseNotes
-        .map((note) => `${note.version}\n${sanitizeHtml(note.note)}`)
+        .map((note) => `${note.version}\n${note.note}`)
         .join("\n\n");
     }
   }
 
-  // Store the sanitized release notes for this version
+  // Store the release notes for this version
   store.set(`releaseNotes.${version}`, releaseNotes);
 
   dialog
@@ -217,41 +216,11 @@ autoUpdater.on("update-available", (info) => {
     })
     .then((result) => {
       if (result.response === 0) {
-        log.info(
-          "User confirmed download. Calling autoUpdater.downloadUpdate()",
-        );
+        autoUpdater.downloadUpdate();
         mainWindow.webContents.send("update-message", "Downloading update...");
-        autoUpdater.downloadUpdate(); // *** This should now reliably trigger the download ***
-      } else {
-        log.info("User declined download.");
       }
     });
 });
-
-function sanitizeHtml(html) {
-  if (!html) return "";
-
-  // Create a temporary DOM element
-  const tempDiv = new (require("jsdom").JSDOM)().window.document.createElement(
-    "div",
-  );
-  tempDiv.innerHTML = html;
-
-  // Extract the text content (this strips all HTML tags)
-  let text = tempDiv.textContent || tempDiv.innerText || "";
-
-  // Additional cleanup for common entities and markdown links
-  text = text
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    // Convert markdown links [text](url) to "text (url)"
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
-
-  return text;
-}
 
 autoUpdater.on("download-progress", (progressObj) => {
   mainWindow.webContents.send("update-progress", progressObj.percent);
@@ -262,8 +231,14 @@ function showPostUpdateReleaseNotes(version) {
   const releaseNotes = store.get(`releaseNotes.${version}`);
 
   if (releaseNotes) {
-    // Make sure we sanitize here as well
-    const cleanedNotes = sanitizeHtml(releaseNotes);
+    // Clean up HTML tags and entities
+    const cleanedNotes = releaseNotes
+      .replace(/<[^>]*>/g, "")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
 
     dialog.showMessageBox(mainWindow, {
       type: "info",
@@ -294,13 +269,6 @@ autoUpdater.on("update-downloaded", (info) => {
         autoUpdater.quitAndInstall(false, true);
       }
     });
-
-  if (info.releaseNotes) {
-    store.set(
-      `githubReleaseNotes.${info.version}`,
-      sanitizeHtml(info.releaseNotes),
-    );
-  }
 });
 
 autoUpdater.on("update-not-available", () => {
@@ -372,8 +340,7 @@ ipcMain.handle("open-subtitle-file", async () => {
 });
 
 ipcMain.handle("check-for-updates", () => {
-  log.info("Manual update check triggered.");
-  autoUpdater.checkForUpdates(); // Trigger check, rely on listeners
+  autoUpdater.checkForUpdatesAndNotify(); // Trigger check, rely on listeners
 });
 
 ipcMain.on("toggle-menu-bar", (_, show) => {
