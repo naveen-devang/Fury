@@ -11,6 +11,10 @@ const isHardwareAccelerated = store.get("hardwareAcceleration", true);
 const remoteMain = require("@electron/remote/main");
 remoteMain.initialize();
 
+autoUpdater.logger = log;
+log.transports.file.level = "debug";
+autoUpdater.autoDownload = false;
+
 if (isHardwareAccelerated) {
   app.commandLine.appendSwitch("force_high_performance_gpu");
   app.commandLine.appendSwitch("ignore-gpu-blacklist");
@@ -213,8 +217,13 @@ autoUpdater.on("update-available", (info) => {
     })
     .then((result) => {
       if (result.response === 0) {
-        autoUpdater.downloadUpdate();
+        log.info(
+          "User confirmed download. Calling autoUpdater.downloadUpdate()",
+        );
         mainWindow.webContents.send("update-message", "Downloading update...");
+        autoUpdater.downloadUpdate(); // *** This should now reliably trigger the download ***
+      } else {
+        log.info("User declined download.");
       }
     });
 });
@@ -363,7 +372,8 @@ ipcMain.handle("open-subtitle-file", async () => {
 });
 
 ipcMain.handle("check-for-updates", () => {
-  autoUpdater.checkForUpdatesAndNotify();
+  log.info("Manual update check triggered.");
+  autoUpdater.checkForUpdates(); // Trigger check, rely on listeners
 });
 
 ipcMain.on("toggle-menu-bar", (_, show) => {
