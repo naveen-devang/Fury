@@ -71,5 +71,3 @@ If you find this project helpful, please consider:
 - 📣 Sharing with others
 
 ---
-
-**Disclaimer**: This player is continuously improving. Feel free to report issues or suggest enhancements!
