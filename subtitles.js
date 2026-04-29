@@ -2,7 +2,7 @@ const { ipcRenderer } = require("electron");
 const fs = require("fs").promises;
 const srt2vtt = require("srt-to-vtt");
 const { createReadStream } = require("fs");
-const Store = new require("electron-store");
+const Store = require("electron-store").default;
 const os = require("os");
 const { promisify } = require("util");
 const writeFile = promisify(fs.writeFile);
@@ -1081,7 +1081,7 @@ class SubtitlesManager {
       track.srclang = isEmbedded
         ? embedInfo.language
         : this.detectLanguage(filePath);
-      track.src = vttPath.startsWith("blob:") ? vttPath : `file://${vttPath}`;
+      track.src = vttPath.startsWith("blob:") ? vttPath : `file:///${vttPath.replace(/\\/g, '/')}`;
       track.dataset.originalPath = filePath;
       track.dataset.isEmbedded = isEmbedded;
       if (isEmbedded) {
@@ -1347,6 +1347,12 @@ class SubtitlesManager {
           this.disableAllTextTracks();
           matchingTrack.track.mode = "showing";
           this.activeTrack = matchingTrack.track;
+
+          // Workaround for Chromium bug where showing a track drops the audio pipeline
+          if (this.mediaPlayer && !this.mediaPlayer.paused) {
+            const currentTime = this.mediaPlayer.currentTime;
+            this.mediaPlayer.currentTime = currentTime;
+          }
 
           // Update the last used language
           this.lastUsedLanguage = matchingTrack.srclang;

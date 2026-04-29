@@ -1,4 +1,4 @@
-const Store = new require('electron-store');
+const Store = require('electron-store').default;
 const store = new Store();
 
 const LAST_POSITIONS_KEY = 'lastPositions';

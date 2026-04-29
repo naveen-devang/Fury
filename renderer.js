@@ -1,7 +1,7 @@
-const { ipcRenderer } = require("electron");
-const { parseFile } = require("music-metadata");
+const { ipcRenderer, webUtils } = require("electron");
+const parseFile = async (filePath) => await ipcRenderer.invoke('parse-file', filePath);
 const path = require("path");
-const Store = new require("electron-store");
+const Store = require("electron-store").default;
 const store = new Store();
 
 const { applyTheme, getCurrentTheme } = require("./src/themes");
@@ -1219,16 +1219,18 @@ document.addEventListener("drop", async (e) => {
   e.preventDefault();
   e.stopPropagation();
 
-  const files = Array.from(e.dataTransfer.files).filter((file) => {
-    const ext = path.extname(file.path).toLowerCase();
-    return supportedFormats.includes(ext);
-  });
+  const filePaths = Array.from(e.dataTransfer.files)
+    .map(file => webUtils.getPathForFile(file))
+    .filter(filePath => {
+      const ext = path.extname(filePath).toLowerCase();
+      return supportedFormats.includes(ext);
+    });
 
-  const promises = files.map((file) => addToPlaylist(file.path));
+  const promises = filePaths.map((filePath) => addToPlaylist(filePath));
 
-  if (currentIndex === -1 && files.length > 0) {
+  if (currentIndex === -1 && filePaths.length > 0) {
     currentIndex = 0;
-    playFile(files[0].path);
+    playFile(filePaths[0]);
   }
 
   // Save playlist after basic info is added

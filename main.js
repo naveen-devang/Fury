@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
 const fs = require("fs").promises;
 const path = require("path");
-const Store = require("electron-store");
+const Store = require("electron-store").default;
 const { autoUpdater } = require("electron-updater");
 const log = require("electron-log");
 const createMenuTemplate = require("./menu-template");
@@ -66,7 +66,7 @@ if (process.platform === "win32") {
 
         // Find and handle media file path from second instance
         const filePath = commandLine.find((arg) => {
-          return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|ts|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(
+          return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|ts|mp3|wav|ogg|aac|m4a|flac|wma|opus|eac3)$/i.test(
             arg,
           );
         });
@@ -79,7 +79,7 @@ if (process.platform === "win32") {
 
     // Handle file opened from Explorer
     const filePath = process.argv.slice(1).find((arg) => {
-      return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|ts|mp3|wav|ogg|aac|m4a|flac|wma|opus)$/i.test(
+      return /\.(mp4|mkv|avi|webm|mov|flv|m4v|3gp|wmv|ts|mp3|wav|ogg|aac|m4a|flac|wma|opus|eac3)$/i.test(
         arg,
       );
     });
@@ -330,6 +330,7 @@ ipcMain.handle("open-files", async () => {
           "flac",
           "wma",
           "opus",
+          "eac3",
         ],
       },
     ],
@@ -362,4 +363,12 @@ ipcMain.handle("check-for-updates", () => {
 ipcMain.on("toggle-menu-bar", (_, show) => {
   mainWindow.setMenuBarVisibility(show);
   mainWindow.setAutoHideMenuBar(!show);
+});
+
+let musicMetadata;
+ipcMain.handle("parse-file", async (event, filePath) => {
+  if (!musicMetadata) {
+    musicMetadata = await import("music-metadata");
+  }
+  return await musicMetadata.parseFile(filePath);
 });

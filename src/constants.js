@@ -9,7 +9,7 @@ const supportedFormats = [
     // Video
     '.mp4', '.mkv', '.avi', '.webm', '.mov', '.flv', '.m4v', '.3gp', '.wmv', '.ts',
     // Audio
-    '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus'
+    '.mp3', '.wav', '.ogg', '.aac', '.m4a', '.flac', '.wma', '.opus', '.eac3',
 ];
 
 const mimeTypes = {
@@ -20,7 +20,8 @@ const mimeTypes = {
     '.H265': 'video/H265',
     '.mpeg': 'video/mpeg',
     '.raw': 'video/raw',
-    '.ts': 'video/mp2t'
+    '.ts': 'video/mp2t',
+    '.eac3': 'audio/eac3'
 };
 
 module.exports = {

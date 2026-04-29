@@ -1,9 +1,9 @@
-const Store = require('electron-store');
+const Store = require('electron-store').default;
 const store = new Store();
 const fs = require('fs').promises;
 const path = require('path');
 const { ipcRenderer } = require('electron');
-
+const { supportedFormats } = require('./constants');
 async function getMediaFilesFromFolder(folderPath) {
     const mediaFiles = [];
     

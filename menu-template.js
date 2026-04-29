@@ -2,7 +2,7 @@ const { app, dialog } = require('electron');
 const { getCurrentTheme } = require('./src/themes');
 const { RELEASE_NOTES } = require('./release-notes');
 const { autoUpdater } = require('electron-updater');
-const Store = require('electron-store');
+const Store = require('electron-store').default;
 const store = new Store();
 const { BrowserWindow } = require('electron');
 
