@@ -1,4 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, protocol } = require("electron");
+const ffmpegBinary = require("ffmpeg-static");
+const ffmpeg = require("fluent-ffmpeg");
+const ffprobePath = require("ffprobe-static").path;
+ffmpeg.setFfprobePath(ffprobePath);
+const { spawn } = require("child_process");
 const fs = require("fs").promises;
 const path = require("path");
 const Store = require("electron-store").default;
@@ -27,6 +32,10 @@ if (isHardwareAccelerated) {
 // Configure logging
 log.transports.file.level = "debug";
 autoUpdater.logger = log;
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'stream', privileges: { standard: true, secure: true, supportFetchAPI: true, bypassCSP: true, stream: true } }
+]);
 
 let mainWindow;
 
@@ -167,6 +176,64 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  protocol.handle('stream', (request) => {
+    const url = new URL(request.url);
+    const filePath = decodeURIComponent(url.searchParams.get('path'));
+    const startTime = url.searchParams.get('time') || '0';
+
+    const args = [
+      '-ss', startTime,
+      '-i', filePath,
+      '-vcodec', 'copy',
+      '-acodec', 'aac',
+      '-b:a', '256k',
+      '-f', 'matroska',
+      'pipe:1'
+    ];
+
+    const ffmpegProcess = spawn(ffmpegBinary, args);
+
+    const stream = new ReadableStream({
+      start(controller) {
+        ffmpegProcess.stdout.on('data', chunk => {
+          try {
+            controller.enqueue(chunk);
+          } catch (e) {
+            ffmpegProcess.kill();
+          }
+        });
+        
+        ffmpegProcess.stderr.on('data', () => {
+          // Consume stderr to prevent pipe buffer from filling up
+        });
+
+        ffmpegProcess.stdout.on('end', () => {
+          try {
+            controller.close();
+          } catch (e) {
+            // Already closed
+          }
+        });
+        
+        ffmpegProcess.on('error', err => {
+          console.error('ffmpeg stream error:', err);
+          try {
+            controller.error(err);
+          } catch (e) {
+            // Already closed
+          }
+        });
+      },
+      cancel() {
+        ffmpegProcess.kill();
+      }
+    });
+
+    return new Response(stream, {
+      headers: { 'Content-Type': 'video/x-matroska' }
+    });
+  });
+
   createWindow();
 
   // Check for updates after a short delay to ensure connectivity
@@ -371,4 +438,13 @@ ipcMain.handle("parse-file", async (event, filePath) => {
     musicMetadata = await import("music-metadata");
   }
   return await musicMetadata.parseFile(filePath);
+});
+
+ipcMain.handle("probe-file", async (event, filePath) => {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (err, metadata) => {
+      if (err) resolve(null);
+      else resolve(metadata);
+    });
+  });
 });

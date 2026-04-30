@@ -76,6 +76,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // DOM Elements
 const mediaPlayer = document.getElementById("media-player");
+
+Object.defineProperty(mediaPlayer, 'logicalDuration', {
+  get() {
+    if (this.dataset.isStreaming === "true") {
+      return parseFloat(this.dataset.streamDuration) || 0;
+    }
+    return this.duration;
+  }
+});
+
+Object.defineProperty(mediaPlayer, 'logicalCurrentTime', {
+  get() {
+    if (this.dataset.isStreaming === "true") {
+      return (parseFloat(this.dataset.streamTimeOffset) || 0) + this.currentTime;
+    }
+    return this.currentTime;
+  },
+  set(value) {
+    if (this.dataset.isStreaming === "true") {
+      this.dataset.streamTimeOffset = value.toString();
+      this.src = `stream://media?path=${encodeURIComponent(this.dataset.originalPath)}&time=${value}`;
+      this.play();
+    } else {
+      this.currentTime = value;
+    }
+  }
+});
+
 const timeSlider = document.getElementById("time-slider");
 const timeDisplay = document.getElementById("time-display");
 const fullscreenBtn = document.getElementById("fullscreen");
@@ -213,7 +241,7 @@ function toggleHardwareAcceleration(enabled) {
 
   // Reload current media to apply changes if something is playing
   if (currentIndex !== -1 && playlist[currentIndex]) {
-    const currentTime = mediaPlayer.currentTime;
+    const currentTime = mediaPlayer.logicalCurrentTime;
     const wasPlaying = !mediaPlayer.paused;
     const currentPath = playlist[currentIndex].path;
 
@@ -221,7 +249,7 @@ function toggleHardwareAcceleration(enabled) {
     mediaPlayer.load();
 
     mediaPlayer.src = currentPath;
-    mediaPlayer.currentTime = currentTime;
+    mediaPlayer.logicalCurrentTime = currentTime;
     if (wasPlaying) {
       mediaPlayer.play().catch(console.error);
     }
@@ -241,9 +269,9 @@ function updateSliderProgress() {
   }
 
   animationFrame = requestAnimationFrame(() => {
-    if (!mediaPlayer.duration) return;
+    if (!mediaPlayer.logicalDuration) return;
 
-    const progress = (mediaPlayer.currentTime / mediaPlayer.duration) * 100;
+    const progress = (mediaPlayer.logicalCurrentTime / mediaPlayer.logicalDuration) * 100;
     timeSlider.style.setProperty("--progress-percent", progress);
 
     const thumb = timeSlider.querySelector("::-webkit-slider-thumb");
@@ -256,10 +284,10 @@ function updateSliderProgress() {
 function handleSliderInteraction(e) {
   const rect = timeSlider.getBoundingClientRect();
   const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  const targetTime = pos * mediaPlayer.duration;
+  const targetTime = pos * mediaPlayer.logicalDuration;
 
   if (!isNaN(targetTime)) {
-    timeDisplay.textContent = `${formatTime(targetTime)} / ${formatTime(mediaPlayer.duration)}`;
+    timeDisplay.textContent = `${formatTime(targetTime)} / ${formatTime(mediaPlayer.logicalDuration)}`;
     timeSlider.style.setProperty("--progress-percent", pos * 100);
 
     seekTargetTime = targetTime;
@@ -279,17 +307,17 @@ function smoothSeek() {
 
   const now = performance.now();
   if (now - lastSeekUpdate >= SEEK_UPDATE_INTERVAL) {
-    const currentTime = mediaPlayer.currentTime;
+    const currentTime = mediaPlayer.logicalCurrentTime;
     const timeDiff = seekTargetTime - currentTime;
 
     if (Math.abs(timeDiff) < 0.1) {
-      mediaPlayer.currentTime = seekTargetTime;
+      mediaPlayer.logicalCurrentTime = seekTargetTime;
       isSeekingSmooth = false;
       seekTargetTime = null;
       return;
     }
     const step = Math.sign(timeDiff) * Math.min(Math.abs(timeDiff), 1);
-    mediaPlayer.currentTime = currentTime + step;
+    mediaPlayer.logicalCurrentTime = currentTime + step;
     lastSeekUpdate = now;
   }
 
@@ -297,10 +325,10 @@ function smoothSeek() {
 }
 
 function updateTimeDisplay() {
-  if (!isNaN(mediaPlayer.duration)) {
-    timeSlider.max = mediaPlayer.duration;
-    timeSlider.value = mediaPlayer.currentTime;
-    timeDisplay.textContent = `${formatTime(mediaPlayer.currentTime)} / ${formatTime(mediaPlayer.duration)}`;
+  if (!isNaN(mediaPlayer.logicalDuration)) {
+    timeSlider.max = mediaPlayer.logicalDuration;
+    timeSlider.value = mediaPlayer.logicalCurrentTime;
+    timeDisplay.textContent = `${formatTime(mediaPlayer.logicalCurrentTime)} / ${formatTime(mediaPlayer.logicalDuration)}`;
     updateSliderProgress();
   }
 }
@@ -311,7 +339,7 @@ loopBtn.addEventListener("click", toggleLoop);
 timeSlider.addEventListener("input", () => {
   const time = parseFloat(timeSlider.value);
   if (!isNaN(time)) {
-    mediaPlayer.currentTime = time;
+    mediaPlayer.logicalCurrentTime = time;
     updateSliderProgress();
   }
 });
@@ -327,7 +355,7 @@ mediaPlayer.addEventListener("timeupdate", () => {
 });
 mediaPlayer.addEventListener("ended", handleMediaEnd);
 mediaPlayer.addEventListener("loadedmetadata", () => {
-  timeSlider.max = mediaPlayer.duration;
+  timeSlider.max = mediaPlayer.logicalDuration;
   updateTimeDisplay();
 
   if (mediaPlayer.fastSeek) {
@@ -355,7 +383,7 @@ document.addEventListener("mousemove", (e) => {
   if (timeSlider.matches(":hover")) {
     const rect = timeSlider.getBoundingClientRect();
     const pos = (e.clientX - rect.left) / rect.width;
-    const previewTime = pos * mediaPlayer.duration;
+    const previewTime = pos * mediaPlayer.logicalDuration;
 
     if (!isNaN(previewTime)) {
       timePreview.textContent = formatTime(previewTime);
@@ -371,7 +399,7 @@ document.addEventListener("mousemove", (e) => {
 timeSlider.addEventListener("mousemove", (e) => {
   const rect = timeSlider.getBoundingClientRect();
   const pos = (e.clientX - rect.left) / rect.width;
-  const previewTime = pos * mediaPlayer.duration;
+  const previewTime = pos * mediaPlayer.logicalDuration;
 
   if (!isNaN(previewTime)) {
     timePreview.textContent = formatTime(previewTime);
@@ -488,16 +516,16 @@ document.addEventListener("keydown", (e) => {
       if (e.ctrlKey) {
         playPrevious();
       } else {
-        mediaPlayer.currentTime = Math.max(0, mediaPlayer.currentTime - 10);
+        mediaPlayer.logicalCurrentTime = Math.max(0, mediaPlayer.logicalCurrentTime - 10);
       }
       break;
     case "ArrowRight":
       if (e.ctrlKey) {
         playNext();
       } else {
-        mediaPlayer.currentTime = Math.min(
-          mediaPlayer.duration,
-          mediaPlayer.currentTime + 10,
+        mediaPlayer.logicalCurrentTime = Math.min(
+          mediaPlayer.logicalDuration,
+          mediaPlayer.logicalCurrentTime + 10,
         );
       }
       break;
@@ -566,43 +594,43 @@ document.addEventListener("keydown", (e) => {
     // Add number keys for seeking (0-9 -> 0% - 90%)
     case "Digit0":
     case "Numpad0":
-      mediaPlayer.currentTime = 0;
+      mediaPlayer.logicalCurrentTime = 0;
       break;
     case "Digit1":
     case "Numpad1":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.1;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.1;
       break;
     case "Digit2":
     case "Numpad2":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.2;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.2;
       break;
     case "Digit3":
     case "Numpad3":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.3;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.3;
       break;
     case "Digit4":
     case "Numpad4":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.4;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.4;
       break;
     case "Digit5":
     case "Numpad5":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.5;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.5;
       break;
     case "Digit6":
     case "Numpad6":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.6;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.6;
       break;
     case "Digit7":
     case "Numpad7":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.7;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.7;
       break;
     case "Digit8":
     case "Numpad8":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.8;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.8;
       break;
     case "Digit9":
     case "Numpad9":
-      mediaPlayer.currentTime = mediaPlayer.duration * 0.9;
+      mediaPlayer.logicalCurrentTime = mediaPlayer.logicalDuration * 0.9;
       break;
   }
 
@@ -880,6 +908,23 @@ async function playFile(filePath) {
   updatePlaylistUI();
   updateWindowTitle();
 
+  const probeData = await ipcRenderer.invoke("probe-file", filePath);
+  let isEac3 = false;
+  let duration = 0;
+  if (probeData) {
+    if (probeData.format && probeData.format.duration) {
+      duration = probeData.format.duration;
+    }
+    if (probeData.streams) {
+      isEac3 = probeData.streams.some(s => s.codec_name === 'eac3' || s.codec_name === 'ac3');
+    }
+  }
+
+  mediaPlayer.dataset.isStreaming = isEac3 ? "true" : "false";
+  mediaPlayer.dataset.streamDuration = duration.toString();
+  mediaPlayer.dataset.originalPath = filePath;
+  mediaPlayer.dataset.streamTimeOffset = "0";
+
   const extension = path.extname(filePath).toLowerCase();
 
   if (mimeTypes[extension]) {
@@ -911,13 +956,13 @@ async function playFile(filePath) {
     );
 
     if (shouldResume) {
-      mediaPlayer.currentTime = lastPosition.position;
+      mediaPlayer.logicalCurrentTime = lastPosition.position;
     } else {
-      mediaPlayer.currentTime = 0;
+      mediaPlayer.logicalCurrentTime = 0;
       removeLastPosition(filePath);
     }
   } else {
-    mediaPlayer.currentTime = 0;
+    mediaPlayer.logicalCurrentTime = 0;
   }
 
   const playPromise = new Promise((resolve, reject) => {
@@ -974,8 +1019,8 @@ mediaPlayer.addEventListener("play", () => {
     if (currentIndex !== -1 && playlist[currentIndex]) {
       saveLastPosition(
         playlist[currentIndex].path,
-        mediaPlayer.currentTime,
-        mediaPlayer.duration,
+        mediaPlayer.logicalCurrentTime,
+        mediaPlayer.logicalDuration,
       );
     }
   }, 5000);
@@ -987,8 +1032,8 @@ mediaPlayer.addEventListener("pause", () => {
   if (currentIndex !== -1 && playlist[currentIndex]) {
     saveLastPosition(
       playlist[currentIndex].path,
-      mediaPlayer.currentTime,
-      mediaPlayer.duration,
+      mediaPlayer.logicalCurrentTime,
+      mediaPlayer.logicalDuration,
     );
   }
 });
@@ -998,8 +1043,8 @@ window.addEventListener("beforeunload", () => {
   if (currentIndex !== -1 && playlist[currentIndex]) {
     saveLastPosition(
       playlist[currentIndex].path,
-      mediaPlayer.currentTime,
-      mediaPlayer.duration,
+      mediaPlayer.logicalCurrentTime,
+      mediaPlayer.logicalDuration,
     );
   }
   store.set("playlist", playlist);
@@ -1143,7 +1188,7 @@ function handleMediaEnd() {
         // At the end of playlist and not looping - stop playback
         mediaPlayer.pause();
         updatePlayPauseIcon(true);
-        mediaPlayer.currentTime = 0;
+        mediaPlayer.logicalCurrentTime = 0;
       }
     }
   } else {

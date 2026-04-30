@@ -55,6 +55,38 @@ body {
     outline: none;
 }
 
+#subtitle-overlay {
+    position: absolute;
+    bottom: 80px; /* Above controls */
+    left: 10%;
+    right: 10%;
+    text-align: center;
+    pointer-events: none; /* Let clicks pass through to video */
+    z-index: 500;
+    
+    /* Native subtitle typography */
+    color: white;
+    font-size: 32px;
+    font-weight: 600;
+    font-family: Arial, sans-serif;
+    
+    /* Native subtitle outline and shadow for readability */
+    text-shadow: 
+        -2px -2px 0 #000,
+        2px -2px 0 #000,
+        -2px 2px 0 #000,
+        2px 2px 0 #000,
+        0px 4px 8px rgba(0,0,0,0.8);
+    
+    /* Smooth transitions */
+    transition: opacity 0.2s ease, bottom 0.3s ease;
+}
+
+/* Move subtitles down when controls are hidden */
+#player-container:-webkit-full-screen.controls-hidden #subtitle-overlay {
+    bottom: 30px;
+}
+
 /* Controls Container */
 #controls-overlay {
     position: absolute;

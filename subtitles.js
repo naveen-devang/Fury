@@ -2,6 +2,7 @@ const { ipcRenderer } = require("electron");
 const fs = require("fs").promises;
 const srt2vtt = require("srt-to-vtt");
 const { createReadStream } = require("fs");
+const fsSync = require("fs");
 const Store = require("electron-store").default;
 const os = require("os");
 const { promisify } = require("util");
@@ -53,6 +54,33 @@ function initializeFfmpeg() {
 }
 
 class SubtitlesManager {
+  renderSubtitles() {
+    if (!this.renderLoopActive) {
+      const overlay = document.getElementById("subtitle-overlay");
+      if (overlay) overlay.innerHTML = "";
+      return;
+    }
+
+    const overlay = document.getElementById("subtitle-overlay");
+    if (overlay && this.parsedCues && this.parsedCues.length > 0) {
+      const currentTimeMs = this.mediaPlayer.logicalCurrentTime * 1000;
+      // Subtitle delay is typically stored in seconds or milliseconds. 
+      // Based on typical Fury app code, let's assume subtitleDelay is in seconds.
+      const EARLY_OFFSET_MS = 250; // Fixes the slight early appearance of stream subtitles
+      const adjustedTimeMs = currentTimeMs - (this.subtitleDelay * 1000) - EARLY_OFFSET_MS;
+
+      const activeCue = this.parsedCues.find(cue => adjustedTimeMs >= cue.start && adjustedTimeMs <= cue.end);
+
+      if (activeCue) {
+        overlay.innerHTML = activeCue.text.replace(/\n/g, '<br>');
+      } else {
+        overlay.innerHTML = "";
+      }
+    }
+
+    requestAnimationFrame(() => this.renderSubtitles());
+  }
+
   constructor(mediaPlayer) {
     this.debug = true; // Set to true to enable detailed logging
 
@@ -1345,11 +1373,26 @@ class SubtitlesManager {
       if (matchingTrack) {
         setTimeout(() => {
           this.disableAllTextTracks();
-          matchingTrack.track.mode = "showing";
+          matchingTrack.track.mode = "hidden";
           this.activeTrack = matchingTrack.track;
+          
+          // --- JS Overlay Logic ---
+          this.activeSubtitlePath = filePath;
+          try {
+            const fileContent = fsSync.readFileSync(filePath, 'utf8');
+            const { parseSync } = require('subtitle');
+            this.parsedCues = parseSync(fileContent).filter(n => n.type === 'cue').map(c => c.data);
+            
+            if (!this.renderLoopActive) {
+              this.renderLoopActive = true;
+              this.renderSubtitles();
+            }
+          } catch (e) {
+            console.error("Failed to parse subtitle", e);
+          }
 
           // Workaround for Chromium bug where showing a track drops the audio pipeline
-          if (this.mediaPlayer && !this.mediaPlayer.paused) {
+          if (this.mediaPlayer && !this.mediaPlayer.paused && this.mediaPlayer.dataset.isStreaming !== "true") {
             const currentTime = this.mediaPlayer.currentTime;
             this.mediaPlayer.currentTime = currentTime;
           }
@@ -1384,6 +1427,11 @@ class SubtitlesManager {
     } else {
       // Subtitle turned off
       this.globalSubtitleEnabled = false;
+      this.renderLoopActive = false;
+      this.activeSubtitlePath = null;
+      this.parsedCues = [];
+      const overlay = document.getElementById("subtitle-overlay");
+      if (overlay) overlay.innerHTML = "";
       if (this.currentVideoPath) {
         delete this.subtitleHistory[this.currentVideoPath];
         this.store.set("subtitleHistory", this.subtitleHistory);
@@ -1406,14 +1454,7 @@ class SubtitlesManager {
     const trackList = document.querySelector(".subtitle-track-list");
     if (!trackList) return;
 
-    const activeTrack = Array.from(this.mediaPlayer.textTracks).find(
-      (track) => track.mode === "showing",
-    );
-    const activeTrackElement = activeTrack
-      ? Array.from(this.mediaPlayer.getElementsByTagName("track")).find(
-          (track) => track.track === activeTrack,
-        )
-      : null;
+    const activePath = this.activeSubtitlePath;
 
     trackList.innerHTML = `
             <div class="subtitle-item ${!activeTrackElement ? "active" : ""}" data-path="">
@@ -1424,7 +1465,7 @@ class SubtitlesManager {
                   .filter((track) => track.dataset.isEmbedded === "true")
                   .map(
                     (track) => `
-                        <div class="subtitle-item ${track === activeTrackElement ? "active" : ""}"
+                        <div class="subtitle-item ${track.dataset.originalPath === activePath ? "active" : ""}"
                              data-path="${track.dataset.originalPath.replace(/"/g, "&quot;")}"
                              data-embedded="true"
                              data-stream-index="${track.dataset.streamIndex}">
@@ -1439,7 +1480,7 @@ class SubtitlesManager {
                   .filter((track) => track.dataset.isEmbedded !== "true")
                   .map(
                     (track) => `
-                        <div class="subtitle-item ${track === activeTrackElement ? "active" : ""}"
+                        <div class="subtitle-item ${track.dataset.originalPath === activePath ? "active" : ""}"
                              data-path="${track.dataset.originalPath.replace(/"/g, "&quot;")}">
                             ${track.label}
                         </div>
@@ -1505,6 +1546,9 @@ class SubtitlesManager {
 
   // Style management
   updateSubtitleStyle() {
+  const sheet = document.styleSheets[0];
+  try { sheet.insertRule('video::cue { display: none !important; opacity: 0 !important; }', sheet.cssRules.length); } catch(e) {}
+
     const styleSheet = document.styleSheets[0];
     let cueRule = Array.from(styleSheet.cssRules).find(
       (rule) => rule.selectorText === "::cue",
